@@ -8,9 +8,6 @@ __pycache__/
 Thumbs.db
 desktop.ini
 
-# Project specific data (Personal/Sensitive)
-ROPA/
-
 # Scratch / experiments
 scratch/
 

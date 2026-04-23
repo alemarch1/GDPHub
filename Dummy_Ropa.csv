@@ -1,0 +1,9 @@
+Processing Activity,Lawful Bases,Data Subject Categories,Personal Data Categories,Recipients Categories,International Transfers,Retention Periods
+Customer relationship management,b) Contract,Customers,Name; email; phone; address,Internal sales department,None,365
+Employee payroll processing,b) Contract; c) Legal obligation,Employees,Name; salary; tax ID; bank account,Payroll provider; tax authorities,None,3650
+Marketing newsletter,a) Consent,Subscribers,Email address; first name,Email marketing platform,USA (Standard Contractual Clauses),730
+Website analytics,f) Legitimate interests,Website visitors,IP address; cookies; browsing behaviour,Analytics provider,USA (Standard Contractual Clauses),180
+Recruitment and hiring,b) Contract,Job applicants,CV; name; email; phone; education,HR department,None,365
+Supplier contract management,b) Contract,Suppliers and vendors,Company name; contact person; bank account,Finance department,None,3650
+Video surveillance,f) Legitimate interests,Visitors; employees,Video recordings; timestamps,Security provider,None,30
+IT system access logs,f) Legitimate interests,Employees; contractors,Username; IP address; access timestamps,IT department,None,90

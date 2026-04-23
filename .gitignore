@@ -1,0 +1,56 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# OS generated files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Project specific data (Personal/Sensitive)
+data/
+logs/
+output/
+Output/
+ROPA/
+A4ROPA/
+
+# Scratch / experiments
+scratch/
+
+# Unused duplicate web directory inside src
+src/web/
+
+# Data files that may contain personal info
+*.xlsx
+*.xls
+*.csv
+*.json
+*.JSON
+
+# Exceptions: files that MUST be tracked
+!web/locales/*.json
+!config.json.example
+!Dummy_Ropa.csv
+
+# Specific exclusion for config.json to prevent uploading local paths
+config.json
+src/config.json
+
+# Google OAuth Credentials (DO NOT UPLOAD)
+credentials.json
+token.json
+
+# Local databases
+*.db
+
+# VS Code & IDEs
+.vscode/
+*.code-workspace
+
+# Extraction output artifacts
+estrazione_*.json
+classificazione_*.json
+identify_*.json
+extracted_documents.json

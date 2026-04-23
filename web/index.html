@@ -1,0 +1,1085 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GDPHub Privacy Hub</title>
+    <!-- Use Inter font for clean Apple-like aesthetics -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css?v=41">
+    <!-- Vue 3 CDN (Composition API) -->
+    <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
+</head>
+
+<body class="light-mode">
+    <div id="app">
+        <!-- Sidebar Navigation -->
+        <nav class="sidebar glass" :class="{ 'open': isSidebarOpen }">
+            <div class="brand">
+                <span class="logo">🛡️</span>
+                <h1>GDPHub</h1>
+            </div>
+            <ul class="nav-links">
+                <li :class="{ 'active': currentView === 'pipeline-view' }" @click="setView('pipeline-view')">
+                    <span>{{ t('nav_pipeline') }}</span>
+                </li>
+                <li :class="{ 'active': currentView === 'ropa-view' }" @click="setView('ropa-view')">
+                    <span>{{ t('nav_ropa') }}</span>
+                </li>
+                <li :class="{ 'active': currentView === 'dashboard-view' }" @click="setView('dashboard-view')">
+                    <span>{{ t('nav_dashboard') }}</span>
+                </li>
+                <li :class="{ 'active': currentView === 'lifecycle-view' }" @click="setView('lifecycle-view')">
+                    <span>{{ t('nav_lifecycle') }}</span>
+                </li>
+                <li :class="{ 'active': currentView === 'config-view' }" @click="setView('config-view')">
+                    <span>{{ t('nav_config') }}</span>
+                </li>
+            </ul>
+        </nav>
+
+        <!-- Mobile Sidebar Overlay -->
+        <div class="sidebar-overlay" v-if="isSidebarOpen" @click="isSidebarOpen = false"></div>
+
+        <!-- Main Content Area -->
+        <main class="content-area">
+            <header class="topbar">
+                <div class="topbar-left">
+                    <button class="menu-toggle" @click="isSidebarOpen = !isSidebarOpen">☰</button>
+                    <h2>{{ viewTitle }}</h2>
+                </div>
+                <div class="topbar-right">
+                    <select class="small-select lang-select" v-model="currentLang">
+                        <option value="en">English</option>
+                        <option value="it">Italiano</option>
+                    </select>
+                    <div class="system-status">{{ t('system_online') }}</div>
+                </div>
+            </header>
+
+            <!-- Configuration View -->
+            <section id="config-view" class="view"
+                :class="{'active-view': currentView === 'config-view', 'hidden-view': currentView !== 'config-view'}">
+                <div class="content-container">
+                    <div class="card glass config-card">
+                        <div class="card-header">
+                            <span class="header-icon">⚙️</span>
+                            <h3>{{ t('cfg_global_source') }}</h3>
+                        </div>
+                        <div class="grid-form">
+                            <div class="form-group full-width">
+                                <label for="active-routing">{{ t('cfg_active_input') }}</label>
+                                <select id="active-routing" v-model="config.active_source">
+                                    <option value="local">Local Scan / Filesystem</option>
+                                    <option value="gmail">Gmail API Sandbox</option>
+                                    <option value="outlook">Microsoft 365 / Outlook</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="input-path">{{ t('cfg_input_path') }}</label>
+                                <div class="input-with-browse">
+                                    <input type="text" id="input-path" v-model="config.input_folder"
+                                        placeholder="/data/input">
+                                    <button class="btn-browse" @click="handleBrowse('config.input_folder', $event)"
+                                        title="Browse Folder">📁</button>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label for="output-path">{{ t('cfg_output_path') }}</label>
+                                <div class="input-with-browse">
+                                    <input type="text" id="output-path" v-model="config.output_folder"
+                                        placeholder="/data/output">
+                                    <button class="btn-browse" @click="handleBrowse('config.output_folder', $event)"
+                                        title="Browse Folder">📁</button>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label for="log-path">{{ t('cfg_log_folder') }}</label>
+                                <div class="input-with-browse">
+                                    <input type="text" id="log-path" v-model="config.log_folder" placeholder="/logs">
+                                    <button class="btn-browse" @click="handleBrowse('config.log_folder', $event)"
+                                        title="Browse Folder">📁</button>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label for="log-level">{{ t('cfg_log_level') }}</label>
+                                <select id="log-level" v-model="config.log_level">
+                                    <option value="DEBUG">DEBUG</option>
+                                    <option value="INFO">INFO</option>
+                                    <option value="WARNING">WARNING</option>
+                                    <option value="ERROR">ERROR</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="config-grid">
+                        <!-- Gmail Config Card -->
+                        <div class="card glass config-card" v-show="config.active_source === 'gmail'">
+                            <div class="card-header">
+                                <span class="header-icon">📧</span>
+                                <h3>{{ t('cfg_step0') }}</h3>
+                            </div>
+                            <div class="grid-form">
+                                <div class="form-group">
+                                    <label for="gmail-credentials">{{ t('cfg_credentials_file') }}</label>
+                                    <input type="text" id="gmail-credentials" v-model="config.mail.credentials_file"
+                                        placeholder="credentials.json">
+                                </div>
+                                <div class="form-group">
+                                    <label for="gmail-token">{{ t('cfg_token_file') }}</label>
+                                    <input type="text" id="gmail-token" v-model="config.mail.token_file"
+                                        placeholder="token.json">
+                                </div>
+                                <div class="form-group full-width">
+                                    <label for="gmail-query">{{ t('cfg_search_query') }}</label>
+                                    <input type="text" id="gmail-query" v-model="config.mail.query"
+                                        :placeholder="t('cfg_ph_query')">
+                                </div>
+                                <div class="form-group">
+                                    <label for="gmail-max">{{ t('cfg_max_emails') }}</label>
+                                    <input type="number" id="gmail-max" v-model="config.mail.max_emails">
+                                </div>
+                                <div class="form-group">
+                                    <label for="gmail-override-days">{{ t('cfg_override_days') }}</label>
+                                    <input type="number" id="gmail-override-days"
+                                        v-model="config.mail.import_override_days" min="0">
+                                </div>
+                                <div class="checkbox-group-wrapper full-width">
+                                    <div class="checkbox-group">
+                                        <input type="checkbox" id="gmail-delete"
+                                            v-model="config.mail.delete_after_processing">
+                                        <label for="gmail-delete">{{ t('cfg_delete_blobs') }}</label>
+                                    </div>
+                                    <div class="checkbox-group">
+                                        <input type="checkbox" id="gmail-override"
+                                            v-model="config.mail.import_override_ignore_processed">
+                                        <label for="gmail-override">{{ t('cfg_override_history') }}</label>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Outlook Config Card -->
+                        <div class="card glass config-card" v-show="config.active_source === 'outlook'">
+                            <div class="card-header">
+                                <span class="header-icon">📬</span>
+                                <h3>{{ t('cfg_step0_outlook') }}</h3>
+                            </div>
+                            <div class="grid-form">
+                                <div class="form-group">
+                                    <label for="outlook-client-id">{{ t('cfg_outlook_client_id') }}</label>
+                                    <input type="text" id="outlook-client-id" v-model="config.outlook.client_id"
+                                        placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx">
+                                </div>
+                                <div class="form-group">
+                                    <label for="outlook-tenant-id">{{ t('cfg_outlook_tenant_id') }}</label>
+                                    <input type="text" id="outlook-tenant-id" v-model="config.outlook.tenant_id"
+                                        placeholder="common">
+                                </div>
+                                <div class="form-group full-width">
+                                    <label for="outlook-query">{{ t('cfg_outlook_query') }}</label>
+                                    <input type="text" id="outlook-query" v-model="config.outlook.query_filter"
+                                        placeholder="isRead eq false">
+                                </div>
+                                <div class="form-group">
+                                    <label for="outlook-max">{{ t('cfg_max_emails') }}</label>
+                                    <input type="number" id="outlook-max" v-model="config.outlook.max_emails">
+                                </div>
+                                <div class="form-group">
+                                    <label for="outlook-override-days">{{ t('cfg_override_days') }}</label>
+                                    <input type="number" id="outlook-override-days"
+                                        v-model="config.outlook.import_override_days" min="0">
+                                </div>
+                                <div class="checkbox-group-wrapper full-width">
+                                    <div class="checkbox-group">
+                                        <input type="checkbox" id="outlook-delete"
+                                            v-model="config.outlook.delete_after_processing">
+                                        <label for="outlook-delete">{{ t('cfg_delete_blobs') }}</label>
+                                    </div>
+                                    <div class="checkbox-group">
+                                        <input type="checkbox" id="outlook-override"
+                                            v-model="config.outlook.import_override_ignore_processed">
+                                        <label for="outlook-override">{{ t('cfg_override_history') }}</label>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="card glass config-card">
+                            <div class="card-header">
+                                <span class="header-icon">🔍</span>
+                                <h3>{{ t('cfg_step1') }}</h3>
+                            </div>
+                            <div class="grid-form">
+                                <div class="form-group full-width">
+                                    <label for="tesseract-path">{{ t('cfg_tess_path') }}</label>
+                                    <input type="text" id="tesseract-path" v-model="config.ext.tesseract_path">
+                                </div>
+                                <div class="form-group full-width">
+                                    <label for="max-workers">{{ t('cfg_max_threads') }}</label>
+                                    <input type="number" id="max-workers" v-model="config.ext.max_workers">
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="card glass config-card">
+                            <div class="card-header">
+                                <span class="header-icon">🤖</span>
+                                <h3>{{ t('cfg_step24') }}</h3>
+                            </div>
+                            <div class="grid-form">
+                                <div class="form-group full-width">
+                                    <label for="ollama-url">{{ t('cfg_ollama_url') }}</label>
+                                    <input type="text" id="ollama-url" v-model="config.cls.ollama_url">
+                                </div>
+                                <div class="form-group full-width">
+                                    <label for="ollama-default-model">{{ t('cfg_ollama_default') }}</label>
+                                    <div class="input-with-browse">
+                                        <select id="ollama-default-model" v-model="config.cls.ollama_model_default">
+                                            <option v-for="m in models" :key="m" :value="m">{{ m }}</option>
+                                        </select>
+                                        <button class="btn-browse" @click="loadModels"
+                                            :title="currentLang === 'it' ? 'Aggiorna Modelli' : 'Refresh Models'">🔄</button>
+                                    </div>
+                                </div>
+                                <div class="form-row-grid">
+                                    <div class="form-group">
+                                        <label for="cls-num-predict">{{ t('cfg_num_predict') }}</label>
+                                        <input type="number" id="cls-num-predict"
+                                            v-model="config.cls.options.num_predict">
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="cls-temperature">{{ t('cfg_temperature') }}</label>
+                                        <input type="number" id="cls-temperature"
+                                            v-model="config.cls.options.temperature" step="0.05">
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="cls-num-ctx">{{ t('cfg_num_ctx') }}</label>
+                                        <input type="number" id="cls-num-ctx" v-model="config.cls.options.num_ctx">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="card glass config-card">
+                            <div class="card-header">
+                                <span class="header-icon">📂</span>
+                                <h3>{{ t('cfg_step3') }}</h3>
+                            </div>
+                            <div class="grid-form">
+                                <div class="form-group full-width">
+                                    <label for="ropa-input-folder">{{ t('cfg_ropa_folder') }}</label>
+                                    <div class="input-with-browse">
+                                        <input type="text" id="ropa-input-folder" v-model="config.ropa.ropa_folder">
+                                        <button class="btn-browse"
+                                            @click="handleBrowse('config.ropa.ropa_folder', $event)"
+                                            title="Browse Folder">📁</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="actions center-actions">
+                        <button class="btn primary save-btn" @click="saveConfiguration">
+                            💾 {{ t('btn_save_changes') }}
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Pipeline View -->
+            <section id="pipeline-view" class="view"
+                :class="{'active-view': currentView === 'pipeline-view', 'hidden-view': currentView !== 'pipeline-view'}">
+                <div class="content-container">
+                    <div class="pipeline-runners">
+                        <!-- Step 0 -->
+                        <div class="card glass action-card">
+                            <div class="step-number">1</div>
+                            <h3>{{ config.active_source === 'gmail' ? t('pipe_title_0') : (config.active_source ===
+                                'outlook' ? t('pipe_title_0_outlook') : t('pipe_title_local')) }}</h3>
+                            <p>{{ config.active_source === 'gmail' ? t('pipe_desc_mail') : (config.active_source ===
+                                'outlook' ? t('pipe_desc_outlook') : t('pipe_desc_local')) }}</p>
+
+                            <div v-show="config.active_source === 'local'" style="margin-bottom: 1rem;">
+                                <div class="input-with-browse">
+                                    <input type="text" v-model="config.input_folder" @input="saveInputFolder"
+                                        placeholder="D:/GDPHUB/Input"
+                                        style="width: 100%; padding: 0.5rem; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(0, 0, 0, 0.1); color: inherit; font-family: inherit;">
+                                    <button class="btn-browse" @click="handleBrowse('config.input_folder', $event)"
+                                        title="Browse Folder">📁</button>
+                                </div>
+                            </div>
+
+                            <button v-show="config.active_source === 'gmail' || config.active_source === 'outlook'"
+                                class="btn secondary exec-btn"
+                                :class="{ 'btn-success': scriptStatuses['0_extract_mail.py'] === 'success' }"
+                                :disabled="processState === 'running'"
+                                @click="executeScript('0_extract_mail.py', false)">
+                                <span v-if="scriptStatuses['0_extract_mail.py'] === 'success'">✓ {{ currentLang === 'it'
+                                    ? 'Completato' : 'Done' }}</span>
+                                <span v-else>{{ config.active_source === 'outlook' ? t('btn_fetch_outlook') :
+                                    t('btn_fetch_mail') }}</span>
+                            </button>
+                        </div>
+
+                        <!-- Step 1 -->
+                        <div class="card glass action-card">
+                            <div class="step-number">2</div>
+                            <h3>{{ t('pipe_title_1') }}</h3>
+                            <p>{{ t('pipe_desc_text') }}</p>
+                            <button class="btn secondary exec-btn"
+                                :class="{ 'btn-success': scriptStatuses['1_extract_text.py'] === 'success' }"
+                                :disabled="processState === 'running'"
+                                @click="executeScript('1_extract_text.py', false)">
+                                <span v-if="scriptStatuses['1_extract_text.py'] === 'success'">✓ {{ currentLang === 'it'
+                                    ? 'Completato' : 'Done' }}</span>
+                                <span v-else>{{ t('btn_start_ocr') }}</span>
+                            </button>
+                        </div>
+
+                        <!-- Step 2 -->
+                        <div class="card glass action-card">
+                            <div class="step-number">3</div>
+                            <h3>{{ t('pipe_title_2') }}</h3>
+                            <p>{{ t('pipe_desc_class') }}</p>
+                            <div class="inline-options">
+                                <label>{{ t('pipe_overrides') }}</label>
+                                <select class="small-select" v-model="classifyModel">
+                                    <option v-for="m in models" :value="m">{{ m }}</option>
+                                </select>
+                                <div class="checkbox-inline">
+                                    <input type="checkbox" id="classify-no-think" v-model="classifyNoThink">
+                                    <label for="classify-no-think">{{ t('pipe_no_think') }}</label>
+                                </div>
+                            </div>
+                            <button class="btn primary exec-btn"
+                                :class="{ 'btn-success': scriptStatuses['2_classify_text.py'] === 'success' }"
+                                :disabled="processState === 'running'"
+                                @click="executeScript('2_classify_text.py', true)">
+                                <span v-if="scriptStatuses['2_classify_text.py'] === 'success'">✓ {{ currentLang ===
+                                    'it' ? 'Completato' : 'Done' }}</span>
+                                <span v-else>{{ t('btn_launch_intel') }}</span>
+                            </button>
+                        </div>
+
+                        <!-- Step 4 -->
+                        <div class="card glass action-card">
+                            <div class="step-number">4</div>
+                            <h3>{{ t('pipe_title_4') }}</h3>
+                            <p>{{ t('pipe_desc_iden') }}</p>
+                            <div class="inline-options">
+                                <label>{{ t('pipe_overrides') }}</label>
+                                <select class="small-select" v-model="identifyModel">
+                                    <option v-for="m in models" :value="m">{{ m }}</option>
+                                </select>
+                                <div class="checkbox-inline">
+                                    <input type="checkbox" id="identify-no-think" v-model="identifyNoThink">
+                                    <label for="identify-no-think">{{ t('pipe_no_think') }}</label>
+                                </div>
+                            </div>
+                            <button class="btn primary exec-btn"
+                                :class="{ 'btn-success': scriptStatuses['4_identify_ROPA.py'] === 'success' }"
+                                :disabled="processState === 'running'"
+                                @click="executeScript('4_identify_ROPA.py', true)">
+                                <span v-if="scriptStatuses['4_identify_ROPA.py'] === 'success'">✓ {{ currentLang ===
+                                    'it' ? 'Completato' : 'Done' }}</span>
+                                <span v-else>{{ t('btn_map_data') }}</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="process-controls">
+                        <div class="row-controls">
+                            <button class="process-btn btn-stop" :disabled="!canStop" @click="stopProcess">
+                                <span>⏹</span> {{ t('btn_stop') }}
+                            </button>
+                            <button class="process-btn btn-pause" :disabled="!canPause" @click="pauseProcess">
+                                <span>⏸</span> {{ t('btn_pause') }}
+                            </button>
+                            <button class="process-btn btn-resume" :disabled="!canResume" @click="resumeProcess">
+                                <span>▶</span> {{ t('btn_resume') }}
+                            </button>
+                        </div>
+
+                        <div class="main-progress-wrapper" v-show="showPipelineProgress">
+                            <div class="progress-header">
+                                <div class="time-stats">
+                                    <span>Elapsed: {{ pipelineElapsedTime }}</span>
+                                    <span style="margin-left: 16px;">Remaining: {{ pipelineRemainingTime }}</span>
+                                </div>
+                                <span>{{ pipelineProgressPercent }}%</span>
+                            </div>
+                            <div class="main-progress-track">
+                                <div class="main-progress-fill" :style="{ width: pipelineProgressPercent + '%' }"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card glass terminal-container" :class="{ 'terminal-collapsed': isTerminalCollapsed }">
+                        <div class="terminal-header" @click="isTerminalCollapsed = !isTerminalCollapsed"
+                            style="cursor: pointer;">
+                            <div class="terminal-dots">
+                                <span class="dot red"></span>
+                                <span class="dot yellow"></span>
+                                <span class="dot green"></span>
+                            </div>
+                            <span class="terminal-title">{{ t('term_title') }}</span>
+                            <div class="terminal-toggle-icon">
+                                <span v-if="isTerminalCollapsed">▼ Expand</span>
+                                <span v-else>▲ Collapse</span>
+                            </div>
+                        </div>
+                        <div class="terminal-body" id="live-console" ref="terminalScrollRef"
+                            v-show="!isTerminalCollapsed">{{ terminalOutput }}</div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ROPA Mapping View -->
+            <section id="ropa-view" class="view"
+                :class="{'active-view': currentView === 'ropa-view', 'hidden-view': currentView !== 'ropa-view'}">
+                <div class="content-container">
+                    <div class="card glass upload-zone mb-large">
+                        <div class="card-header">
+                            <span class="header-icon">📤</span>
+                            <h3>{{ t('ropa_upload_title') }}</h3>
+                        </div>
+                        <div class="upload-content">
+                            <p class="description-text">{{ t('ropa_upload_desc') }}</p>
+                            <div class="upload-actions">
+                                <div class="file-input-wrapper">
+                                    <input type="file" ref="ropaFileInput" id="ropa-file" accept=".csv, .xls, .xlsx"
+                                        @change="onFileSelected" class="hidden">
+                                    <label for="ropa-file" class="btn secondary glass-btn">
+                                        <span>📄 {{ selectedFileName || (currentLang === 'it' ? 'Scegli File... (.csv, .xls, .xlsx)' : 'Choose File... (.csv, .xls, .xlsx)') }}</span>
+                                    </label>
+                                </div>
+                                <button class="btn primary ripple-btn" @click="uploadRopa">
+                                    {{ t('btn_upload_ropa') }}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card glass editor-zone">
+                        <div class="card-header">
+                            <span class="header-icon">🗺️</span>
+                            <h3>{{ t('ropa_editor_title') }}</h3>
+                        </div>
+                        <div class="table-scroll-container">
+                            <table class="apple-table">
+                                <thead>
+                                    <tr>
+                                        <th class="sortable-th" @click="ropaSortBy('id')">
+    <div class="sortable-th-content">
+        <span>{{ t('th_id') }}</span>
+        <div class="sort-arrows">
+            <span class="sort-arrow" :class="{ active: ropaSortKey === 'id' && ropaSortAsc }">▲</span>
+            <span class="sort-arrow" :class="{ active: ropaSortKey === 'id' && !ropaSortAsc }">▼</span>
+        </div>
+    </div>
+</th>
+                                        <th class="sortable-th" @click="ropaSortBy('Processing Activity')">
+    <div class="sortable-th-content">
+        <span>{{ t('th_activity') }}</span>
+        <div class="sort-arrows">
+            <span class="sort-arrow" :class="{ active: ropaSortKey === 'Processing Activity' && ropaSortAsc }">▲</span>
+            <span class="sort-arrow" :class="{ active: ropaSortKey === 'Processing Activity' && !ropaSortAsc }">▼</span>
+        </div>
+    </div>
+</th>
+                                        <th class="sortable-th" @click="ropaSortBy('Lawful Bases')">
+    <div class="sortable-th-content">
+        <span>{{ t('th_purpose') }}</span>
+        <div class="sort-arrows">
+            <span class="sort-arrow" :class="{ active: ropaSortKey === 'Lawful Bases' && ropaSortAsc }">▲</span>
+            <span class="sort-arrow" :class="{ active: ropaSortKey === 'Lawful Bases' && !ropaSortAsc }">▼</span>
+        </div>
+    </div>
+</th>
+                                        <th class="sortable-th" @click="ropaSortBy('Data Subject Categories')">
+    <div class="sortable-th-content">
+        <span>{{ t('th_subjects') }}</span>
+        <div class="sort-arrows">
+            <span class="sort-arrow" :class="{ active: ropaSortKey === 'Data Subject Categories' && ropaSortAsc }">▲</span>
+            <span class="sort-arrow" :class="{ active: ropaSortKey === 'Data Subject Categories' && !ropaSortAsc }">▼</span>
+        </div>
+    </div>
+</th>
+                                        <th class="sortable-th" @click="ropaSortBy('Personal Data Categories')">
+    <div class="sortable-th-content">
+        <span>{{ t('th_personal') }}</span>
+        <div class="sort-arrows">
+            <span class="sort-arrow" :class="{ active: ropaSortKey === 'Personal Data Categories' && ropaSortAsc }">▲</span>
+            <span class="sort-arrow" :class="{ active: ropaSortKey === 'Personal Data Categories' && !ropaSortAsc }">▼</span>
+        </div>
+    </div>
+</th>
+                                        <th class="sortable-th" @click="ropaSortBy('Recipients Categories')">
+    <div class="sortable-th-content">
+        <span>{{ t('th_recipients') }}</span>
+        <div class="sort-arrows">
+            <span class="sort-arrow" :class="{ active: ropaSortKey === 'Recipients Categories' && ropaSortAsc }">▲</span>
+            <span class="sort-arrow" :class="{ active: ropaSortKey === 'Recipients Categories' && !ropaSortAsc }">▼</span>
+        </div>
+    </div>
+</th>
+                                        <th class="sortable-th" @click="ropaSortBy('International Transfers')">
+    <div class="sortable-th-content">
+        <span>{{ t('th_transfers') }}</span>
+        <div class="sort-arrows">
+            <span class="sort-arrow" :class="{ active: ropaSortKey === 'International Transfers' && ropaSortAsc }">▲</span>
+            <span class="sort-arrow" :class="{ active: ropaSortKey === 'International Transfers' && !ropaSortAsc }">▼</span>
+        </div>
+    </div>
+</th>
+                                        <th class="sortable-th" @click="ropaSortBy('Retention Periods')">
+    <div class="sortable-th-content">
+        <span>{{ t('th_retention') }}</span>
+        <div class="sort-arrows">
+            <span class="sort-arrow" :class="{ active: ropaSortKey === 'Retention Periods' && ropaSortAsc }">▲</span>
+            <span class="sort-arrow" :class="{ active: ropaSortKey === 'Retention Periods' && !ropaSortAsc }">▼</span>
+        </div>
+    </div>
+</th>
+                                        <th>{{ t('th_actions') }}</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr v-for="(row, idx) in sortedRopaData" :key="idx">
+                                        <td>{{ row["id"] || idx }}</td>
+                                        <td>{{ row["Processing Activity"] }}</td>
+                                        <td>{{ translateBases(row["Lawful Bases"]) }}</td>
+                                        <td>{{ row["Data Subject Categories"] }}</td>
+                                        <td>{{ row["Personal Data Categories"] }}</td>
+                                        <td>{{ row["Recipients Categories"] }}</td>
+                                        <td>{{ row["International Transfers"] }}</td>
+                                        <td>{{ row["Retention Periods"] }}</td>
+                                         <td>
+                                            <div class="action-btn-group">
+                                                <button class="btn-icon btn-edit" @click="openRopaEditor(ropaDataCache.indexOf(row))"
+                                                    :title="currentLang === 'it' ? 'Modifica' : 'Edit'">✏️</button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ROPA Modal (Teleported to body to escape glass stacking context) -->
+            <Teleport to="body">
+                <div class="modal ropa-modal-overlay" v-if="isRopaModalOpen">
+                    <div class="modal-content large-modal">
+                        <div class="card-header">
+                            <span class="header-icon">📝</span>
+                            <h3>{{ t('lbl_activity') }}</h3>
+                        </div>
+                        <div class="grid-form">
+                            <div class="form-group full-width">
+                                <input type="text" v-model="ropaEditingRow.activity">
+                            </div>
+                                <div class="form-group full-width">
+                                    <label>{{ t('lbl_purpose') }}</label>
+                                    <div class="custom-multiselect" :class="{ 'active': isBasesDropdownOpen }">
+                                        <div class="multiselect-trigger" @click="toggleBasesDropdown">
+                                            <span class="selected-values-text">
+                                                {{ translateBases(ropaEditingRow.selectedBases.join(', ')) || (currentLang === 'it' ? 'Seleziona basi...' : 'Select bases...') }}
+                                            </span>
+                                            <span class="dropdown-arrow">▼</span>
+                                        </div>
+                                        <div class="multiselect-dropdown" v-if="isBasesDropdownOpen">
+                                            <div v-for="opt in lawfulBasesOptions" :key="opt.id" class="dropdown-item" 
+                                                 @click.stop="ropaEditingRow.selectedBases.includes(opt.id) ? ropaEditingRow.selectedBases.splice(ropaEditingRow.selectedBases.indexOf(opt.id), 1) : ropaEditingRow.selectedBases.push(opt.id)">
+                                                <input type="checkbox" :checked="ropaEditingRow.selectedBases.includes(opt.id)" @click.stop>
+                                                <span>{{ opt.label }}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            <div class="form-group">
+                                <label>{{ t('lbl_subjects') }}</label>
+                                <input type="text" v-model="ropaEditingRow.subjects">
+                            </div>
+                            <div class="form-group">
+                                <label>{{ t('lbl_personal') }}</label>
+                                <input type="text" v-model="ropaEditingRow.personal">
+                            </div>
+                            <div class="form-group">
+                                <label>{{ t('lbl_recipients') }}</label>
+                                <input type="text" v-model="ropaEditingRow.recipients">
+                            </div>
+                            <div class="form-group">
+                                <label>{{ t('lbl_transfers') }}</label>
+                                <input type="text" v-model="ropaEditingRow.transfers">
+                            </div>
+                            <div class="form-group">
+                                <label>{{ t('lbl_retention') }}</label>
+                                <div style="display: flex; gap: 10px; width: 100%;">
+                                    <input type="number" v-model="ropaEditingRow.num" min="0"
+                                        style="flex: 1; width: 100%; box-sizing: border-box;">
+                                    <select v-model="ropaEditingRow.unit"
+                                        style="flex: 1; width: 100%; box-sizing: border-box;">
+                                        <option value="Days">Days</option>
+                                        <option value="Months">Months</option>
+                                        <option value="Years">Years</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="modal-actions">
+                            <button class="btn secondary" @click="isRopaModalOpen = false">{{ t('btn_cancel') }}</button>
+                            <button class="btn primary" @click="saveRopaEditor">{{ t('btn_save_context') }}</button>
+                        </div>
+                    </div>
+                </div>
+            </Teleport>
+
+            <!-- Dashboard View -->
+            <section id="dashboard-view" class="view"
+                :class="{'active-view': currentView === 'dashboard-view', 'hidden-view': currentView !== 'dashboard-view'}">
+                <div class="content-container">
+                    <div class="card glass mb-large">
+                        <h3>{{ t('dash_snap_title') }}</h3>
+                        <div class="table-scroll-container restrict-h">
+                            <table class="apple-table compact">
+                                <thead>
+                                    <tr>
+                                        <th class="sortable-th" @click="docsSortBy('file_name')">
+    <div class="sortable-th-content">
+        <span>{{ t('th_filename') }}</span>
+        <div class="sort-arrows">
+            <span class="sort-arrow" :class="{ active: docsSortKey === 'file_name' && docsSortAsc }">▲</span>
+            <span class="sort-arrow" :class="{ active: docsSortKey === 'file_name' && !docsSortAsc }">▼</span>
+        </div>
+    </div>
+</th>
+                                        <th class="sortable-th" @click="docsSortBy('type')">
+    <div class="sortable-th-content">
+        <span>{{ t('th_type') }}</span>
+        <div class="sort-arrows">
+            <span class="sort-arrow" :class="{ active: docsSortKey === 'type' && docsSortAsc }">▲</span>
+            <span class="sort-arrow" :class="{ active: docsSortKey === 'type' && !docsSortAsc }">▼</span>
+        </div>
+    </div>
+</th>
+                                        <th class="sortable-th" @click="docsSortBy('parent_id')">
+    <div class="sortable-th-content">
+        <span>{{ t('th_parent_id') }}</span>
+        <div class="sort-arrows">
+            <span class="sort-arrow" :class="{ active: docsSortKey === 'parent_id' && docsSortAsc }">▲</span>
+            <span class="sort-arrow" :class="{ active: docsSortKey === 'parent_id' && !docsSortAsc }">▼</span>
+        </div>
+    </div>
+</th>
+                                        <th class="sortable-th" @click="docsSortBy('classification_generic')">
+    <div class="sortable-th-content">
+        <span>{{ t('th_classification') }}</span>
+        <div class="sort-arrows">
+            <span class="sort-arrow" :class="{ active: docsSortKey === 'classification_generic' && docsSortAsc }">▲</span>
+            <span class="sort-arrow" :class="{ active: docsSortKey === 'classification_generic' && !docsSortAsc }">▼</span>
+        </div>
+    </div>
+</th>
+                                        <th class="sortable-th" @click="docsSortBy('description_short')">
+    <div class="sortable-th-content">
+        <span>{{ t('th_description') }}</span>
+        <div class="sort-arrows">
+            <span class="sort-arrow" :class="{ active: docsSortKey === 'description_short' && docsSortAsc }">▲</span>
+            <span class="sort-arrow" :class="{ active: docsSortKey === 'description_short' && !docsSortAsc }">▼</span>
+        </div>
+    </div>
+</th>
+                                        <th class="sortable-th" @click="docsSortBy('names_or_surnames_masked')">
+    <div class="sortable-th-content">
+        <span>{{ t('th_filtered') }}</span>
+        <div class="sort-arrows">
+            <span class="sort-arrow" :class="{ active: docsSortKey === 'names_or_surnames_masked' && docsSortAsc }">▲</span>
+            <span class="sort-arrow" :class="{ active: docsSortKey === 'names_or_surnames_masked' && !docsSortAsc }">▼</span>
+        </div>
+    </div>
+</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr v-for="r in sortedDocsData" :key="r.id">
+                                        <td>{{ r.file_name || 'N/A' }}</td>
+                                        <td><span :class="['badge', 'badge-' + (r.type || 'File').toLowerCase()]">{{
+                                                r.type || 'File' }}</span></td>
+                                        <td>{{ r.parent_id || '-' }}</td>
+                                        <td>{{ r.classification_generic || 'Pending' }}</td>
+                                        <td>{{ r.description_short || '-' }}</td>
+                                        <td>{{ r.names_or_surnames_masked ? (currentLang === 'it' ? '✅ Sì' : '✅ Yes') :
+                                            (currentLang === 'it' ? '⬜ No' : '⬜ No') }}</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <div class="card glass">
+                        <h3>{{ t('dash_ml_title') }}</h3>
+                        <div class="table-scroll-container restrict-h">
+                            <table class="apple-table compact">
+                                <thead>
+                                    <tr>
+                                        <th class="sortable-th" @click="idenSortBy('file_name')">
+    <div class="sortable-th-content">
+        <span>{{ t('th_doc_target') }}</span>
+        <div class="sort-arrows">
+            <span class="sort-arrow" :class="{ active: idenSortKey === 'file_name' && idenSortAsc }">▲</span>
+            <span class="sort-arrow" :class="{ active: idenSortKey === 'file_name' && !idenSortAsc }">▼</span>
+        </div>
+    </div>
+</th>
+                                        <th class="sortable-th" @click="idenSortBy('type')">
+    <div class="sortable-th-content">
+        <span>{{ t('th_type') }}</span>
+        <div class="sort-arrows">
+            <span class="sort-arrow" :class="{ active: idenSortKey === 'type' && idenSortAsc }">▲</span>
+            <span class="sort-arrow" :class="{ active: idenSortKey === 'type' && !idenSortAsc }">▼</span>
+        </div>
+    </div>
+</th>
+                                        <th class="sortable-th" @click="idenSortBy('parent_id')">
+    <div class="sortable-th-content">
+        <span>{{ t('th_parent_id') }}</span>
+        <div class="sort-arrows">
+            <span class="sort-arrow" :class="{ active: idenSortKey === 'parent_id' && idenSortAsc }">▲</span>
+            <span class="sort-arrow" :class="{ active: idenSortKey === 'parent_id' && !idenSortAsc }">▼</span>
+        </div>
+    </div>
+</th>
+                                        <th class="sortable-th" @click="idenSortBy('ROPA_ID')">
+    <div class="sortable-th-content">
+        <span>{{ t('th_mapped_task') }}</span>
+        <div class="sort-arrows">
+            <span class="sort-arrow" :class="{ active: idenSortKey === 'ROPA_ID' && idenSortAsc }">▲</span>
+            <span class="sort-arrow" :class="{ active: idenSortKey === 'ROPA_ID' && !idenSortAsc }">▼</span>
+        </div>
+    </div>
+</th>
+                                        <th class="sortable-th" @click="idenSortBy('Processing_Activity')">
+    <div class="sortable-th-content">
+        <span>{{ t('th_confidence') }}</span>
+        <div class="sort-arrows">
+            <span class="sort-arrow" :class="{ active: idenSortKey === 'Processing_Activity' && idenSortAsc }">▲</span>
+            <span class="sort-arrow" :class="{ active: idenSortKey === 'Processing_Activity' && !idenSortAsc }">▼</span>
+        </div>
+    </div>
+</th>
+                                        <th class="sortable-th" @click="idenSortBy('description')">
+    <div class="sortable-th-content">
+        <span>{{ t('th_justification') }}</span>
+        <div class="sort-arrows">
+            <span class="sort-arrow" :class="{ active: idenSortKey === 'description' && idenSortAsc }">▲</span>
+            <span class="sort-arrow" :class="{ active: idenSortKey === 'description' && !idenSortAsc }">▼</span>
+        </div>
+    </div>
+</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr v-for="r in sortedIdenData" :key="r.id">
+                                        <td>{{ r.File_ID || r.file_name || r.file_id || 'N/A' }}</td>
+                                        <td><span :class="['badge', 'badge-' + (r.type || 'File').toLowerCase()]">{{
+                                                r.type || 'File' }}</span></td>
+                                        <td>{{ r.parent_id || '-' }}</td>
+                                        <td><span style="font-weight:600; color:var(--primary-color)">{{ r.ROPA_ID ||
+                                                '-' }}</span></td>
+                                        <td>{{ r.Processing_Activity || '-' }}</td>
+                                        <td><small>{{ r.description || r.classification || 'N/A' }}</small></td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Lifecycle View -->
+            <section id="lifecycle-view" class="view"
+                :class="{'active-view': currentView === 'lifecycle-view', 'hidden-view': currentView !== 'lifecycle-view'}">
+                <div class="content-container">
+                    <div class="card glass mb-large">
+                        <h3>{{ t('lc_title') }}</h3>
+                        <p>{{ t('lc_desc') }}</p>
+                        <div class="header-actions" style="margin-bottom: 1.5rem;">
+                            <button class="btn primary" @click="runJanitor" :disabled="runningJanitor">
+                                {{ runningJanitor ? '⏳ Running...' : '🚀 Run Automated Janitor' }}
+                            </button>
+                        </div>
+
+                        <div class="table-scroll-container restrict-h" style="max-height: 400px;">
+                            <table class="apple-table compact">
+                                <thead>
+                                    <tr>
+                                        <th class="sortable-th" @click="activeLcSortBy('lifecycle_id')">
+    <div class="sortable-th-content">
+        <span>{{ t('th_lc_id') }}</span>
+        <div class="sort-arrows">
+            <span class="sort-arrow" :class="{ active: activeLcSortKey === 'lifecycle_id' && activeLcSortAsc }">▲</span>
+            <span class="sort-arrow" :class="{ active: activeLcSortKey === 'lifecycle_id' && !activeLcSortAsc }">▼</span>
+        </div>
+    </div>
+</th>
+                                        <th class="sortable-th" @click="activeLcSortBy('document_id')">
+    <div class="sortable-th-content">
+        <span>{{ t('th_doc_id') }}</span>
+        <div class="sort-arrows">
+            <span class="sort-arrow" :class="{ active: activeLcSortKey === 'document_id' && activeLcSortAsc }">▲</span>
+            <span class="sort-arrow" :class="{ active: activeLcSortKey === 'document_id' && !activeLcSortAsc }">▼</span>
+        </div>
+    </div>
+</th>
+                                        <th class="sortable-th" @click="activeLcSortBy('document_type')">
+    <div class="sortable-th-content">
+        <span>{{ t('th_lc_type') }}</span>
+        <div class="sort-arrows">
+            <span class="sort-arrow" :class="{ active: activeLcSortKey === 'document_type' && activeLcSortAsc }">▲</span>
+            <span class="sort-arrow" :class="{ active: activeLcSortKey === 'document_type' && !activeLcSortAsc }">▼</span>
+        </div>
+    </div>
+</th>
+                                        <th class="sortable-th" @click="activeLcSortBy('classification')">
+    <div class="sortable-th-content">
+        <span>{{ t('th_classification') }}</span>
+        <div class="sort-arrows">
+            <span class="sort-arrow" :class="{ active: activeLcSortKey === 'classification' && activeLcSortAsc }">▲</span>
+            <span class="sort-arrow" :class="{ active: activeLcSortKey === 'classification' && !activeLcSortAsc }">▼</span>
+        </div>
+    </div>
+</th>
+                                        <th class="sortable-th" @click="activeLcSortBy('creation_date')">
+    <div class="sortable-th-content">
+        <span>{{ t('th_creation') }}</span>
+        <div class="sort-arrows">
+            <span class="sort-arrow" :class="{ active: activeLcSortKey === 'creation_date' && activeLcSortAsc }">▲</span>
+            <span class="sort-arrow" :class="{ active: activeLcSortKey === 'creation_date' && !activeLcSortAsc }">▼</span>
+        </div>
+    </div>
+</th>
+                                        <th class="sortable-th" @click="activeLcSortBy('scheduled_deletion_date')">
+    <div class="sortable-th-content">
+        <span>{{ t('th_scheduled') }}</span>
+        <div class="sort-arrows">
+            <span class="sort-arrow" :class="{ active: activeLcSortKey === 'scheduled_deletion_date' && activeLcSortAsc }">▲</span>
+            <span class="sort-arrow" :class="{ active: activeLcSortKey === 'scheduled_deletion_date' && !activeLcSortAsc }">▼</span>
+        </div>
+    </div>
+</th>
+                                        <th class="sortable-th" @click="activeLcSortBy('status')">
+    <div class="sortable-th-content">
+        <span>{{ t('th_status') }}</span>
+        <div class="sort-arrows">
+            <span class="sort-arrow" :class="{ active: activeLcSortKey === 'status' && activeLcSortAsc }">▲</span>
+            <span class="sort-arrow" :class="{ active: activeLcSortKey === 'status' && !activeLcSortAsc }">▼</span>
+        </div>
+    </div>
+</th>
+                                        <th class="sortable-th" @click="activeLcSortBy('notes')">
+    <div class="sortable-th-content">
+        <span>{{ t('th_notes') }}</span>
+        <div class="sort-arrows">
+            <span class="sort-arrow" :class="{ active: activeLcSortKey === 'notes' && activeLcSortAsc }">▲</span>
+            <span class="sort-arrow" :class="{ active: activeLcSortKey === 'notes' && !activeLcSortAsc }">▼</span>
+        </div>
+    </div>
+</th>
+                                        <th>{{ t('th_actions') }}</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr v-for="row in sortedActiveLcData" :key="row.lifecycle_id">
+                                        <td>{{ row.lifecycle_id }}</td>
+                                        <td>{{ row.document_id || '-' }}</td>
+                                        <td><span
+                                                :class="['badge', 'badge-' + (row.document_type || 'File').toLowerCase()]">{{
+                                                row.document_type || 'File' }}</span></td>
+                                        <td>{{ row.classification || 'Unknown' }}</td>
+                                        <td>{{ formatDate(row.creation_date) }}</td>
+                                        <td>{{ formatDate(row.scheduled_deletion_date) }}</td>
+                                        <td><span style="font-weight:bold;">{{ row.status || 'PENDING' }}</span></td>
+                                        <td>{{ row.notes || '-' }}</td>
+                                        <td>
+                                            <div class="action-btn-group">
+                                                <button class="btn-icon btn-edit" @click="openLcEditor(row)"
+                                                    :title="currentLang === 'it' ? 'Modifica' : 'Edit'">✏️</button>
+                                                <button class="btn-icon btn-delete" @click="deleteLcDirect(row)"
+                                                    :disabled="(row.status || 'PENDING') !== 'PENDING'"
+                                                    :title="currentLang === 'it' ? 'Elimina' : 'Delete'">🗑️</button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        <!-- Modal for Lifecycle Editing (Teleported to body for consistency) -->
+                        <Teleport to="body">
+                            <div class="modal" v-if="isLcModalOpen">
+                                <div class="modal-content glass">
+                                    <div class="card-header">
+                                        <span class="header-icon">🛡️</span>
+                                        <h3>
+                                            {{ lcEditingRow.document_type }} about {{ lcEditingRow.classification }}
+                                        </h3>
+                                    </div>
+                                    <div class="grid-form">
+                                        <div class="form-group full-width">
+                                            <p style="font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 12px;">
+                                                Created on {{ lcEditingRow.creation_date }} • ID: {{ lcEditingRow.id }}
+                                            </p>
+                                        </div>
+                                        <div class="form-group full-width">
+                                            <label>{{ t('lbl_status') }}</label>
+                                            <select v-model="lcEditingRow.status">
+                                                <option value="PENDING">PENDING</option>
+                                                <option value="DELETED">DELETED</option>
+                                                <option value="FAILED">FAILED</option>
+                                                <option value="ON_HOLD">ON_HOLD</option>
+                                                <option value="EXEMPT">EXEMPT</option>
+                                            </select>
+                                        </div>
+                                        <div class="form-group full-width">
+                                            <label>{{ t('lbl_lc_notes') }}</label>
+                                            <textarea rows="4" v-model="lcEditingRow.notes" 
+                                                :placeholder="currentLang === 'it' ? 'Aggiungi note amministrative...' : 'Add administrative notes...'"></textarea>
+                                        </div>
+                                    </div>
+                                    <div class="modal-actions">
+                                        <button class="btn secondary" @click="isLcModalOpen = false">{{ t('btn_cancel') }}</button>
+                                        <button class="btn btn-danger-action" @click="deleteLcNow">🗑️ DELETE NOW</button>
+                                        <button class="btn primary" @click="saveLcEditor">{{ t('btn_save_context') }}</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </Teleport>
+                    </div>
+
+                    <div class="card glass terminal-container" :class="{ 'terminal-collapsed': isJanitorLogCollapsed }">
+                        <div class="terminal-header" @click="isJanitorLogCollapsed = !isJanitorLogCollapsed"
+                            style="cursor: pointer;">
+                            <div class="terminal-dots">
+                                <span class="dot red"></span>
+                                <span class="dot yellow"></span>
+                                <span class="dot green"></span>
+                            </div>
+                            <span class="terminal-title">{{ currentLang === 'it' ? 'LOG OPERAZIONI' : 'OPERATIONS LOG'
+                                }}</span>
+                            <div class="terminal-toggle-icon">
+                                <span v-if="isJanitorLogCollapsed">▼ Expand</span>
+                                <span v-else>▲ Collapse</span>
+                            </div>
+                        </div>
+                        <div class="terminal-body" v-show="!isJanitorLogCollapsed">{{ janitorLog || (currentLang ===
+                            'it' ? 'Nessuna operazione registrata.' : 'No operations logged yet.') }}</div>
+                    </div>
+
+                    <div class="card glass mb-large" style="margin-top: 24px;">
+                        <div class="header-actions"
+                            style="margin-bottom: 1rem; display: flex; align-items: center; gap: 1rem;">
+                            <h3 style="margin: 0;">{{ currentLang === 'it' ? 'Record Eliminati' : 'Deleted Records' }}
+                            </h3>
+                            <button class="btn secondary" style="display: flex; gap: 8px; align-items: center;"
+                                @click="exportDeletedPdf">📄 Audit Export</button>
+                        </div>
+                        <div class="table-scroll-container restrict-h" style="max-height: 400px;">
+                            <table class="apple-table compact">
+                                <thead>
+                                    <tr>
+                                        <th class="sortable-th" @click="deletedLcSortBy('lifecycle_id')">
+    <div class="sortable-th-content">
+        <span>{{ t('th_lc_id') }}</span>
+        <div class="sort-arrows">
+            <span class="sort-arrow" :class="{ active: deletedLcSortKey === 'lifecycle_id' && deletedLcSortAsc }">▲</span>
+            <span class="sort-arrow" :class="{ active: deletedLcSortKey === 'lifecycle_id' && !deletedLcSortAsc }">▼</span>
+        </div>
+    </div>
+</th>
+                                        <th class="sortable-th" @click="deletedLcSortBy('document_id')">
+    <div class="sortable-th-content">
+        <span>{{ t('th_doc_id') }}</span>
+        <div class="sort-arrows">
+            <span class="sort-arrow" :class="{ active: deletedLcSortKey === 'document_id' && deletedLcSortAsc }">▲</span>
+            <span class="sort-arrow" :class="{ active: deletedLcSortKey === 'document_id' && !deletedLcSortAsc }">▼</span>
+        </div>
+    </div>
+</th>
+                                        <th class="sortable-th" @click="deletedLcSortBy('document_type')">
+    <div class="sortable-th-content">
+        <span>{{ 'Doc Type' }}</span>
+        <div class="sort-arrows">
+            <span class="sort-arrow" :class="{ active: deletedLcSortKey === 'document_type' && deletedLcSortAsc }">▲</span>
+            <span class="sort-arrow" :class="{ active: deletedLcSortKey === 'document_type' && !deletedLcSortAsc }">▼</span>
+        </div>
+    </div>
+</th>
+                                        <th class="sortable-th" @click="deletedLcSortBy('creation_date')">
+    <div class="sortable-th-content">
+        <span>{{ currentLang === 'it' ? 'Data di Creazione' : 'Creation Date' }}</span>
+        <div class="sort-arrows">
+            <span class="sort-arrow" :class="{ active: deletedLcSortKey === 'creation_date' && deletedLcSortAsc }">▲</span>
+            <span class="sort-arrow" :class="{ active: deletedLcSortKey === 'creation_date' && !deletedLcSortAsc }">▼</span>
+        </div>
+    </div>
+</th>
+                                        <th class="sortable-th" @click="deletedLcSortBy('scheduled_deletion_date')">
+    <div class="sortable-th-content">
+        <span>{{ currentLang === 'it' ? 'Data di cancellazione' : 'Deletion Date' }}</span>
+        <div class="sort-arrows">
+            <span class="sort-arrow" :class="{ active: deletedLcSortKey === 'scheduled_deletion_date' && deletedLcSortAsc }">▲</span>
+            <span class="sort-arrow" :class="{ active: deletedLcSortKey === 'scheduled_deletion_date' && !deletedLcSortAsc }">▼</span>
+        </div>
+    </div>
+</th>
+                                        <th class="sortable-th" @click="deletedLcSortBy('status')">
+    <div class="sortable-th-content">
+        <span>{{ t('th_status') }}</span>
+        <div class="sort-arrows">
+            <span class="sort-arrow" :class="{ active: deletedLcSortKey === 'status' && deletedLcSortAsc }">▲</span>
+            <span class="sort-arrow" :class="{ active: deletedLcSortKey === 'status' && !deletedLcSortAsc }">▼</span>
+        </div>
+    </div>
+</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr v-for="row in sortedDeletedLcData" :key="row.lifecycle_id">
+                                        <td>{{ row.lifecycle_id }}</td>
+                                        <td>{{ row.document_id || '-' }}</td>
+                                        <td><span
+                                                :class="['badge', 'badge-' + (row.document_type || 'File').toLowerCase()]">{{
+                                                row.document_type || 'File' }}</span></td>
+                                        <td>{{ formatDate(row.creation_date) }}</td>
+                                        <td>{{ formatDate(row.scheduled_deletion_date) }}</td>
+                                        <td><span class="badge"
+                                                style="background: rgba(255,59,48,0.1); color: #ff3b30;">{{ row.status
+                                                }}</span></td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <div id="toast-container">
+                <div v-for="toast in toasts" :key="toast.id" class="toast" style="opacity: 1;">
+                    {{ toast.message }}
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script src="app.js?v=2011"></script>
+</body>
+
+</html>

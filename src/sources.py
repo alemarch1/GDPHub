@@ -1,8 +1,6 @@
-# --- 00_Sources.py ---
-# This script manages the data source configuration for the entire pipeline.
-# It provides an interactive command-line interface allowing you to easily select
-# whether the pipeline should process a local folder or fetch data from Gmail.
-# It dynamically updates the 'active_source' setting directly inside config.json.
+# Interactive CLI tool to select the active data source for the pipeline.
+# Updates the 'active_source' setting in config.json to control whether
+# the pipeline processes a local folder, Gmail, or Microsoft 365 / Outlook.
 
 import json
 from pathlib import Path
@@ -11,6 +9,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 CONFIG_FILE = SCRIPT_DIR / 'config.json'
 
 def main():
+    """Prompts the user to select a data source and saves the choice to config.json."""
     if not CONFIG_FILE.exists():
         print(f"Error: Could not find configuration file at {CONFIG_FILE}.")
         return

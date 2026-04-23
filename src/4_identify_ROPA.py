@@ -1,3 +1,7 @@
+# This script matches extracted documents against ROPA processing activities
+# using an Ollama language model. It analyzes the document's content and
+# classification to identify which legal processing activities it relates to.
+
 import os
 import sys
 import json
@@ -11,12 +15,13 @@ from pathlib import Path
 from tqdm import tqdm
 from config_manager import get_config
 
-# 1. Paths and Configuration
+# --- CONFIGURATION AND PATHS ---
 SCRIPT_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = SCRIPT_DIR.parent
 
-# --- ARGUMENT PARSING HELPER (RE-LOCATED) ---
+# --- ARGUMENT PARSING HELPER ---
 def parse_arguments():
+    """Parses command line arguments for ROPA identification."""
     parser = argparse.ArgumentParser(description="Match Extracted documents against ROPA activities using Ollama")
     parser.add_argument("--model", type=str, help="Ollama model to use", default=None)
     parser.add_argument("--no-think", action="store_true", help="Disable model thinking/chain-of-thought")
@@ -40,11 +45,11 @@ OLLAMA_MODEL_DEFAULT   = classify_cfg.get('ollama_model_default', 'mistral:lates
 TIMEOUT_SECONDS        = classify_cfg.get('timeout_seconds', 30)
 API_REQUEST_TIMEOUT    = classify_cfg.get('api_request_timeout', 25)
 
-# 2. Logging Setup
+# --- LOGGING SYSTEM CONFIGURATION ---
 from utils_logging import setup_logging
 setup_logging("4_identify_ROPA")
 
-# 3. Ollama Client Initialization (FIX 1)
+# --- OLLAMA CLIENT INITIALIZATION ---
 try:
     ollama_client = ollama.Client(host=OLLAMA_URL, timeout=API_REQUEST_TIMEOUT)
     logging.info(f"Ollama client initialized for URL: {OLLAMA_URL}")
@@ -52,13 +57,14 @@ except Exception as e:
     logging.error(f"Cannot create Ollama client: {e}", exc_info=True)
     sys.exit(1)
 
-# 4. Utilities
+# --- UTILITY FUNCTIONS ---
 def clean_text(text: str) -> str:
+    """Removes non-ASCII characters and normalizes whitespace."""
     txt = re.sub(r'[^\x20-\x7E\n\t]', '', text)
     return re.sub(r'\s+', ' ', txt).strip()
 
 def get_models(client: ollama.Client) -> list:
-    # FIX 2: Native and safer way to get models without using 'requests'
+    """Retrieves the list of available Ollama models using the native client API."""
     try:
         response = client.list()
         models_list = response.get("models", [])
@@ -69,6 +75,7 @@ def get_models(client: ollama.Client) -> list:
         return []
 
 def select_ollama_model(client: ollama.Client, force_model: str = None) -> str:
+    """Allows the user to select an Ollama model or uses the forced/default one."""
     if force_model:
         logging.info(f"Model forcefully set via CLI: {force_model}")
         return force_model
@@ -92,8 +99,9 @@ def select_ollama_model(client: ollama.Client, force_model: str = None) -> str:
 
 ACTIVE_OLLAMA_MODEL = select_ollama_model(ollama_client, CLI_ARGS.model)
 
-# 6. Building the Improved Prompt
+# --- PROMPT CONSTRUCTION LOGIC ---
 def build_prompt(document: dict, processing_activities: list, use_example: bool = True) -> str:
+    """Constructs the LLM prompt to match a document against ROPA processing activities."""
     example = ""
     if use_example:
         example = (
@@ -132,8 +140,9 @@ def build_prompt(document: dict, processing_activities: list, use_example: bool 
     )
     return prompt
 
-# 7. LLM Query Function
+# --- LLM QUERY ENGINE ---
 def query_llm_for_document(client: ollama.Client, doc: dict, ropa_list: list) -> tuple:
+    """Sends a document to the LLM and parses the matched ROPA IDs from the response."""
     file_id = doc.get('file_id', '')
     cls = doc.get('classification_generic', '')
     desc = doc.get('description_short', '')
@@ -208,8 +217,9 @@ def query_llm_for_document(client: ollama.Client, doc: dict, ropa_list: list) ->
     
     return unique_ids[:2], cls, desc
 
-# 8. Main Process with Resume Logic
+# --- MAIN DOCUMENT IDENTIFICATION PROCESS ---
 def process_identification():
+    """Loads documents and ROPA records, runs LLM matching, and saves results to the database."""
     from database import get_session, create_db_and_tables
     from models import Document, RopaRecord, DocumentRopaMapping
     from sqlmodel import select
@@ -294,6 +304,6 @@ def process_identification():
     logging.info(f"Processing complete.")
     print(f"Processing complete!")
 
-# 9. Execution Entry Point
+# --- SCRIPT EXECUTION ENTRY POINT ---
 if __name__ == "__main__":
     process_identification()

@@ -1,9 +1,11 @@
+# Bootstrap utility that migrates configuration from config.json into the
+# SQLite database. Run once after initial setup or when config.json is updated.
+
 import json
 import os
 import sys
 from pathlib import Path
 
-# Add src to path if needed (though usually we run from project root)
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), ".")))
 
 from database import engine, CONFIG_FILE
@@ -11,6 +13,7 @@ from models import Configuration
 from sqlmodel import Session, select
 
 def seed_config():
+    """Reads config.json and upserts each key-value pair into the Configuration table."""
     if not CONFIG_FILE.exists():
         print(f"No config file found at {CONFIG_FILE}")
         return
@@ -22,14 +25,10 @@ def seed_config():
     with Session(engine) as session:
         count = 0
         for key, value in config_data.items():
-            # We store the value as a JSON string to maintain structure
+            # Store value as JSON string to preserve structure
             json_value = json.dumps(value)
-            
-            # SQLite UPSERT: INSERT ... ON CONFLICT(key) DO UPDATE SET value = excluded.value
-            # In SQLModel/SQLAlchemy we can use session.get and then update, or raw SQL.
-            # For simplicity and to follow the "UPSERT" requirement, I'll avoid raw SQL if possible
-            # but I'll use the session to check and update.
-            
+
+            # Upsert: update if exists, insert otherwise
             existing = session.get(Configuration, key)
             if existing:
                 existing.value = json_value

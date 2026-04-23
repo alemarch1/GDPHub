@@ -653,28 +653,71 @@ const app = createApp({
                 const { jsPDF } = window.jspdf;
                 const doc = new jsPDF('landscape');
                 
-                doc.setFontSize(16);
-                doc.text("Deleted Records Audit Report", 14, 20);
+                // Report header
+                doc.setFontSize(18);
+                doc.setTextColor(40, 40, 45);
+                doc.text("GDPR Document Erasure Audit Report", 14, 20);
                 doc.setFontSize(10);
+                doc.setTextColor(100, 100, 105);
                 doc.text("Generated: " + new Date().toLocaleString(), 14, 28);
+                doc.text(`Total records: ${deletedLcData.value.length}`, 14, 33);
                 
+                // Compliance notice
+                doc.setFontSize(8);
+                doc.setTextColor(120, 120, 125);
+                doc.text(
+                    "This report serves as proof of GDPR Art. 17 erasure compliance. " +
+                    "All personal data has been permanently removed from Cloud, Filesystem, and Database.",
+                    14, 39
+                );
+
+                // Full lifecycle table
                 doc.autoTable({
-                    startY: 35,
-                    head: [['Lifecycle ID', 'Document ID', 'Doc Type', 'Creation Date', 'Deletion Date', 'Status']],
-                    body: deletedLcData.value.map(row => [
-                        row.lifecycle_id,
-                        row.document_id || '-',
-                        row.document_type || 'File',
-                        formatDate(row.creation_date),
-                        formatDate(row.scheduled_deletion_date),
-                        row.status
-                    ]),
+                    startY: 45,
+                    head: [['Doc ID', 'Doc Type', 'Created', 'Scheduled Deletion', 'Actual Deletion', 'Retention', 'Status', 'Notes']],
+                    body: deletedLcData.value.map(row => {
+                        // Calculate retention duration in days
+                        let retentionDays = '-';
+                        const created = row.creation_date && row.creation_date !== 'None' ? new Date(row.creation_date) : null;
+                        const deleted = row.actual_deletion_date && row.actual_deletion_date !== 'None' ? new Date(row.actual_deletion_date) : null;
+                        if (created && deleted && !isNaN(created) && !isNaN(deleted)) {
+                            retentionDays = Math.round((deleted - created) / (1000 * 60 * 60 * 24)) + 'd';
+                        }
+                        
+                        return [
+                            row.document_id || '-',
+                            row.document_type || 'File',
+                            formatDate(row.creation_date),
+                            formatDate(row.scheduled_deletion_date),
+                            formatDate(row.actual_deletion_date),
+                            retentionDays,
+                            row.status,
+                            (row.notes || '-').substring(0, 60)
+                        ];
+                    }),
                     theme: 'striped',
-                    headStyles: { fillColor: [60, 60, 67] }, /* Apple-like dark gray */
-                    styles: { fontSize: 9 }
+                    headStyles: { fillColor: [60, 60, 67], fontSize: 8 },
+                    styles: { fontSize: 7, cellPadding: 2 },
+                    columnStyles: {
+                        0: { cellWidth: 50 },
+                        7: { cellWidth: 45 }
+                    }
                 });
                 
-                doc.save('Deleted_Records_Audit.pdf');
+                // Footer with page numbers
+                const pageCount = doc.internal.getNumberOfPages();
+                for (let i = 1; i <= pageCount; i++) {
+                    doc.setPage(i);
+                    doc.setFontSize(8);
+                    doc.setTextColor(150, 150, 155);
+                    doc.text(
+                        `Page ${i} of ${pageCount} — GDPHub Audit Export`,
+                        doc.internal.pageSize.getWidth() / 2, doc.internal.pageSize.getHeight() - 10,
+                        { align: 'center' }
+                    );
+                }
+                
+                doc.save('GDPR_Erasure_Audit_Report.pdf');
                 showToast(currentLang.value === 'it' ? "Esportazione PDF completata!" : "PDF Export complete!");
             } catch(e) {
                 console.error(e);

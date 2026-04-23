@@ -1,4 +1,3 @@
-# --- 0_extract_mail.py ---
 # This module connects securely to your email mailbox using either the
 # Google Gmail API or the Microsoft Graph API (Outlook / Microsoft 365).
 # Key functionalities:
@@ -24,13 +23,12 @@ from sqlmodel import select
 
 from config_manager import get_config
 
+# --- CONFIGURATION AND PATHS ---
 SCRIPT_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = SCRIPT_DIR.parent
 
 
-# ═══════════════════════════════════════════════════════════
-#  Gmail Extraction (existing logic, moved into its own function)
-# ═══════════════════════════════════════════════════════════
+# --- GMAIL EXTRACTION ENGINE ---
 
 def extract_gmail(mail_download_folder: Path, processed_emails: set,
                   mail_config: dict, query: str, max_emails: int,
@@ -181,11 +179,10 @@ def extract_gmail(mail_download_folder: Path, processed_emails: set,
 
     except Exception as error:
         logging.error(f'An error occurred communicating with Gmail API: {error}')
+        sys.exit(1)
 
 
-# ═══════════════════════════════════════════════════════════
-#  Outlook / Microsoft Graph Extraction
-# ═══════════════════════════════════════════════════════════
+# --- OUTLOOK / MICROSOFT GRAPH EXTRACTION ENGINE ---
 
 def extract_outlook(mail_download_folder: Path, processed_emails: set,
                     outlook_config: dict, max_emails: int,
@@ -216,7 +213,7 @@ def extract_outlook(mail_download_folder: Path, processed_emails: set,
         messages = asyncio.run(_fetch_outlook_messages(client, query_filter, max_emails))
     except Exception as e:
         logging.error(f"Error fetching Outlook messages: {e}")
-        return
+        sys.exit(1)
 
     if not messages:
         logging.info("No Outlook messages found matching the query.")
@@ -235,6 +232,9 @@ def extract_outlook(mail_download_folder: Path, processed_emails: set,
         return
 
     logging.info(f"Processing {len(to_process)} new messages...")
+
+    error_count = 0
+    success_count = 0
 
     for msg in tqdm(to_process, desc="Downloading Outlook Emails"):
         msg_id = msg.id
@@ -301,14 +301,21 @@ def extract_outlook(mail_download_folder: Path, processed_emails: set,
                 session.add(ProcessedEmail(id=msg_id, source="outlook"))
                 session.commit()
 
+            success_count += 1
             logging.info(f"Successfully processed Outlook email {msg_id}. Created {len(new_files_created)} files.")
 
         except Exception as msg_err:
+            error_count += 1
             logging.error(f"Failed to process Outlook message {msg_id}: {msg_err}")
 
-    logging.info(f"Outlook extraction complete. Payloads saved in: {mail_download_folder.resolve()}")
+    logging.info(f"Outlook extraction complete. {success_count} succeeded, {error_count} failed. Payloads saved in: {mail_download_folder.resolve()}")
+
+    if error_count > 0 and success_count == 0:
+        logging.error(f"All {error_count} messages failed to process.")
+        sys.exit(1)
 
 
+# --- ASYNC HELPERS FOR MICROSOFT GRAPH ---
 async def _fetch_outlook_messages(client, query_filter: str, max_emails: int):
     """Async helper: fetches messages from the user's Outlook inbox."""
     from msgraph.generated.users.item.messages.messages_request_builder import MessagesRequestBuilder
@@ -334,10 +341,7 @@ async def _fetch_outlook_attachments(client, message_id: str):
     return []
 
 
-# ═══════════════════════════════════════════════════════════
-#  Main Entry Point
-# ═══════════════════════════════════════════════════════════
-
+# --- MAIN EXECUTION LOGIC ---
 def main():
     active_source = get_config("active_source", "gmail")
 

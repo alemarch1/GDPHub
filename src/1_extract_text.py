@@ -32,7 +32,7 @@ from odf.opendocument import load as odf_load
 from odf import text as odf_text, teletype as odf_teletype
 import xml.etree.ElementTree as ET
 
-# --- Section: Global Configuration Loading ---
+# --- GLOBAL CONFIGURATION AND PATHS ---
 SCRIPT_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = SCRIPT_DIR.parent
 
@@ -54,23 +54,23 @@ else:
 from utils_logging import setup_logging
 from utils_presidio import create_analyzer, create_anonymizer, anonymize_text
 
-# --- Section: Per-Worker Presidio Engine Globals ---
+# --- PER-WORKER PRESIDIO ENGINE GLOBALS ---
 # These are initialized inside each worker process via worker_init().
 # spaCy models cannot be pickled across process boundaries, so each
 # worker must create its own AnalyzerEngine and AnonymizerEngine.
 _worker_analyzer = None
 _worker_anonymizer = None
 
-# --- Section: General Utility Functions ---
+# --- GENERAL UTILITY FUNCTIONS ---
 def clean_text(text: str) -> str:
-    # Cleans text from unwanted characters and normalizes spaces.
+    """Cleans text from unwanted characters and normalizes spaces."""
     if not text: return ""
     text = re.sub(r'[^\x20-\x7E\n\r\t]', '', text)
     text = re.sub(r'\s+', ' ', text)
     return text.strip()
 
 def generate_md5_hash(file_path: Path) -> Optional[str]:
-    # Calculates the MD5 hash (digital fingerprint) of a file.
+    """Calculates the MD5 hash (digital fingerprint) of a file."""
     h = hashlib.md5()
     try:
         with file_path.open('rb') as f:
@@ -86,7 +86,7 @@ def generate_md5_hash(file_path: Path) -> Optional[str]:
 
 def get_scaling_factor(page_rect_width: float, page_rect_height: float,
                        default_dpi=300, max_img_width=10000, max_img_height=10000) -> float:
-    # Calculates scaling factor for PDF images to use in OCR.
+    """Calculates scaling factor for PDF images to use in OCR."""
     factor = default_dpi / 72.0
     current_width = page_rect_width * factor
     current_height = page_rect_height * factor
@@ -96,9 +96,9 @@ def get_scaling_factor(page_rect_width: float, page_rect_height: float,
         factor = min(scale_x, scale_y)
     return factor
 
-# --- Section: Functions for Extracting Text from Specific File Types ---
+# --- TEXT EXTRACTION ENGINES BY FILE TYPE ---
 def extract_text_from_pdf(file_path: Path) -> str:
-    # Extracts text from PDF files, with OCR fallback for image pages.
+    """Extracts text from PDF files, with OCR fallback for image pages."""
     extracted_pages = []
     ocr_triggered_on_doc = False
     max_ocr_pages_limit = 2
@@ -152,7 +152,7 @@ def extract_text_from_pdf(file_path: Path) -> str:
             doc.close()
 
 def extract_text_from_docx(file_path: Path) -> str:
-    # Extracts text from DOCX (Word) files.
+    """Extracts text from DOCX (Word) files."""
     try:
         doc = docx.Document(str(file_path))
         return clean_text("\n".join(p.text for p in doc.paragraphs if p.text))
@@ -161,7 +161,7 @@ def extract_text_from_docx(file_path: Path) -> str:
         return ""
 
 def extract_text_from_doc(file_path: Path) -> str:
-    # Extracts text from DOC files (legacy Word, Windows only).
+    """Extracts text from DOC files (legacy Word, Windows only)."""
     if sys.platform != "win32":
         logging.warning(f"Extracting .doc is supported on Windows only. Skipped: {file_path.name}")
         return ""
@@ -194,7 +194,7 @@ def extract_text_from_doc(file_path: Path) -> str:
             pass
 
 def extract_text_from_odt(file_path: Path) -> str:
-    # Extracts text from ODT (OpenDocument Text) files.
+    """Extracts text from ODT (OpenDocument Text) files."""
     try:
         doc = odf_load(str(file_path))
         paragraphs = doc.getElementsByType(odf_text.P)
@@ -204,7 +204,7 @@ def extract_text_from_odt(file_path: Path) -> str:
         return ""
 
 def extract_text_from_rtf(file_path: Path) -> str:
-    # Extracts text from RTF files.
+    """Extracts text from RTF files."""
     try:
         raw_text = file_path.read_text(encoding='utf-8', errors='ignore')
         return clean_text(rtf_to_text(raw_text))
@@ -213,7 +213,7 @@ def extract_text_from_rtf(file_path: Path) -> str:
         return ""
 
 def extract_text_from_xml(file_path: Path) -> str:
-    # Extracts text from XML files (uses structured parsing, regex fallback).
+    """Extracts text from XML files (uses structured parsing, regex fallback)."""
     try:
         tree = ET.parse(str(file_path))
         root = tree.getroot()
@@ -232,7 +232,7 @@ def extract_text_from_xml(file_path: Path) -> str:
         return ""
 
 def _extract_text_from_json_recursive(data) -> list:
-    # Recursive helper function to extract all strings from JSON data.
+    """Recursive helper function to extract all strings from JSON data."""
     text_parts = []
     if isinstance(data, dict):
         for value in data.values():
@@ -245,7 +245,7 @@ def _extract_text_from_json_recursive(data) -> list:
     return text_parts
 
 def extract_text_from_json(file_path: Path) -> str:
-    # Extracts all text values (strings) from a JSON file.
+    """Extracts all text values (strings) from a JSON file."""
     try:
         raw_json = file_path.read_text(encoding='utf-8', errors='ignore')
         data = json.loads(raw_json)
@@ -259,7 +259,7 @@ def extract_text_from_json(file_path: Path) -> str:
         return ""
 
 def extract_text_from_html(file_path: Path) -> str:
-    # Extracts text from HTML files using regex.
+    """Extracts text from HTML files using regex."""
     try:
         raw_html = file_path.read_text(encoding='utf-8', errors='ignore')
         raw_html = re.sub(r'<(script|style)\b[^>]*>.*?</\1\s*>', '', raw_html, flags=re.IGNORECASE | re.DOTALL)
@@ -270,7 +270,7 @@ def extract_text_from_html(file_path: Path) -> str:
         return ""
 
 def extract_text_from_csv(file_path: Path) -> str:
-    # Extracts text from CSV files (treated as plain text).
+    """Extracts text from CSV files (treated as plain text)."""
     try:
         lines = file_path.read_text(encoding='utf-8', errors='ignore').splitlines()
         return clean_text("\n".join(lines))
@@ -279,7 +279,7 @@ def extract_text_from_csv(file_path: Path) -> str:
         return ""
 
 def extract_text_from_xls(file_path: Path) -> str:
-    # Extracts text from XLS files (legacy Excel).
+    """Extracts text from XLS files (legacy Excel)."""
     try:
         with open(os.devnull, 'w') as devnull:
             workbook = xlrd.open_workbook(str(file_path), logfile=devnull)
@@ -295,7 +295,7 @@ def extract_text_from_xls(file_path: Path) -> str:
         return ""
 
 def extract_text_from_plaintext(file_path: Path) -> str:
-    # Extracts text from plain text files (TXT, MD).
+    """Extracts text from plain text files (TXT, MD)."""
     try:
         return clean_text(file_path.read_text(encoding='utf-8', errors='ignore'))
     except Exception as e:
@@ -313,9 +313,9 @@ EXTRACTOR_MAP = {
     '.txt': extract_text_from_plaintext,
 }
 
-# --- Section: Single File Processing ---
+# --- SINGLE FILE PROCESSING PIPELINE ---
 def process_file(file_path: Path) -> dict | None:
-    # Processes a single file: calculates hash, extracts text, anonymizes PII via Presidio.
+    """Processes a single file: calculates hash, extracts text, anonymizes PII via Presidio."""
     global _worker_analyzer, _worker_anonymizer
     logging.debug(f"Starting processing: {file_path.name}")
     file_hash = generate_md5_hash(file_path)
@@ -373,7 +373,7 @@ def process_file(file_path: Path) -> dict | None:
     return record
 
 def worker_init(log_dir: Path):
-    # Initializes logging and Presidio NLP engine in each worker process.
+    """Initializes logging and Presidio NLP engine in each worker process."""
     # Each worker needs its own engine because spaCy models can't be pickled.
     global _worker_analyzer, _worker_anonymizer
     setup_logging("1_extract_text")
@@ -381,11 +381,11 @@ def worker_init(log_dir: Path):
     _worker_anonymizer = create_anonymizer()
     logging.info("Worker Presidio engine initialized.")
 
-# --- Section: Entire Directory Processing ---
+# --- DIRECTORY SCANNING AND PARALLEL EXECUTION ---
 def process_files_in_directory(
     scan_directory: Path, output_dir: Path, log_dir: Path
 ) -> None:
-    # Scans a directory, processes supported files in parallel, saves results to JSON.
+    """Scans a directory, processes supported files in parallel, saves results to JSON."""
     if not scan_directory.is_dir():
         logging.error(f"Folder to scan '{scan_directory}' does not exist.")
         sys.exit(1)
@@ -455,7 +455,7 @@ def process_files_in_directory(
     except Exception as e:
         logging.error(f"Unexpected error saving JSON results: {e}")
 
-# --- Main Script Execution Block ---
+# --- MAIN SCRIPT EXECUTION BLOCK ---
 if __name__ == "__main__":
     setup_logging("1_extract_text") 
     logging.info("Logging system configured for Main process.")

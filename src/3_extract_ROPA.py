@@ -1,3 +1,8 @@
+# This script extracts, normalizes, and imports ROPA (Register of Processing Activities)
+# records from Excel (XLS, XLSX), ODS, or CSV files into the SQLite database.
+# It supports manual column mapping via a CLI interactive session or automated
+# mapping via CLI arguments.
+
 import os
 import sys
 import json
@@ -12,11 +17,12 @@ from models import RopaRecord
 from sqlmodel import delete
 from config_manager import get_config
 
-# 1. Paths and Configuration
+# --- CONFIGURATION AND PATHS ---
 SCRIPT_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = SCRIPT_DIR.parent
 
 def parse_arguments():
+    """Parses command line arguments for ROPA extraction."""
     parser = argparse.ArgumentParser(description="Extract and normalize ROPA columns")
     parser.add_argument("--file", type=str, help="Absolute path to the ROPA file to process")
     parser.add_argument("--mapping", type=str, help="JSON string dict mapping required fields to actual Excel columns")
@@ -33,7 +39,7 @@ def select_input_file(folder_path: Path, valid_extensions: list) -> Path | None:
     List only supported files (by extension) in the given folder
     and ask the user to select one by number.
     """
-    # FIX 3: Prevent errors if the folder doesn't exist
+    # Prevent errors if the folder doesn't exist
     if not folder_path.exists() or not folder_path.is_dir():
         print(f"Error: The folder '{folder_path}' does not exist.")
         return None
@@ -55,7 +61,6 @@ def select_input_file(folder_path: Path, valid_extensions: list) -> Path | None:
 
     while True:
         try:
-            # FIX 2: Added a 'q' option to quit gracefully
             selection = input("\nEnter the number of the file to process (or 'q' to quit): ").strip()
             if selection.lower() == 'q':
                 return None
@@ -68,12 +73,12 @@ def select_input_file(folder_path: Path, valid_extensions: list) -> Path | None:
         except ValueError:
             print("Invalid input. Please enter a number.")
         except KeyboardInterrupt:
-            # FIX 2: Handle Ctrl+C gracefully
             print("\nOperation cancelled by user.")
             return None
 
+# --- UTILITY FUNCTIONS ---
 def read_file(file_path: Path):
-    # Reads the file based on its extension
+    """Reads the ROPA file based on its extension (CSV, XLS, XLSX, ODS)."""
     ext = file_path.suffix.lower()
     try:
         if ext == ".csv":
@@ -86,7 +91,7 @@ def read_file(file_path: Path):
             print(f"Unsupported file format: {ext}")
             return None
     except ImportError as ie:
-        # FIX 3: Explicitly warn about missing Excel/ODS libraries
+        # Warn about missing Excel/ODS libraries
         print(f"\nMissing required library to read {ext} files: {ie}")
         print("Try running: pip install openpyxl odfpy xlrd")
         return None
@@ -115,8 +120,9 @@ def prompt_for_mapping(required_field: str, available_columns: list) -> str | No
             print("\nOperation cancelled by user.")
             return None
 
+# --- MAIN EXECUTION LOGIC ---
 def main():
-    # Setup unified logging
+    """Main entry point for extracting and importing ROPA records."""
     setup_logging("3_extract_ROPA")
 
     config_section = get_config("extract_ROPA.py", {})
@@ -133,7 +139,7 @@ def main():
 
     valid_extensions = [".xls", ".xlsx", ".ods", ".csv"]
 
-    # 2. Ask the user which file to process within the folder, or use CLI
+    # Select which file to process (CLI argument or interactive prompt)
     if CLI_ARGS.file:
         input_file = Path(CLI_ARGS.file)
         if not input_file.exists():
@@ -147,21 +153,21 @@ def main():
 
     print(f"\nSelected file: {input_file.name}")
 
-    # 3. Read the selected file
+    # Read and parse the selected file
     df = read_file(input_file)
     if df is None:
         return
 
-    # FIX 1: Replace any empty cells (NaN) with an empty string to avoid JSON parsing errors downstream
+    # Replace empty cells (NaN) with empty strings to avoid JSON parsing errors
     df = df.fillna("")
 
-    # 4. Display available columns with progressive numbering
+    # Display available columns with progressive numbering
     available_columns = df.columns.tolist()
     print("\nAvailable columns:")
     for idx, col in enumerate(available_columns, start=1):
         print(f"{idx}. {col}")
 
-    # 5. Define required English fields and build the mapping
+    # Define required fields and build the column mapping
     required_fields = [
         "Processing Activity",
         "Lawful Bases",
@@ -203,7 +209,7 @@ def main():
     for field, col in mapping.items():
         print(f"'{field}' <-- '{col}'")
 
-    # 6. Extract the columns according to the mapping and rename them
+    # Extract the columns according to the mapping and rename them
     try:
         extracted_data = pd.DataFrame()
         for field in required_fields:
@@ -216,16 +222,16 @@ def main():
          print(f"Error extracting columns. Check mapping. Details: {e}")
          return
 
-    # 7. Removes newline (\n and \r) and replaces them with a space
+    # Normalize newlines by replacing them with spaces
     extracted_data = extracted_data.replace(r'[\r\n]+', ' ', regex=True)
     
-    # 8. Ensure no new NaNs were generated during regex operations
+    # Ensure no new NaNs were generated during regex operations
     extracted_data = extracted_data.fillna("")
 
-    # 9. Add an "id" column with a 4-digit progressive ID for each row
+    # Add a 4-digit progressive ID column for each row
     extracted_data.insert(0, "id", [f"{i:04d}" for i in range(1, len(extracted_data) + 1)])
 
-    # 10. Save the extracted data to Database
+    # Save the extracted data to the database
     create_db_and_tables()
     try:
         with get_session() as session:

@@ -1,7 +1,5 @@
-# --- utils_outlook.py ---
-# This module provides authentication and service initialization for
-# the Microsoft Graph API (Outlook / Microsoft 365 email).
-# It mirrors utils_gmail.py in purpose and structure.
+# Microsoft Graph API (Outlook / Microsoft 365) authentication and service
+# initialization for GDPHub. Mirrors utils_gmail.py in purpose and structure.
 #
 # Authentication uses InteractiveBrowserCredential, which opens a browser
 # window for the user to sign in with their Microsoft account.
@@ -19,8 +17,8 @@ from config_manager import get_config
 # - Mail.Read: list and read email messages
 # - Mail.ReadWrite: needed for the Janitor to move messages to Deleted Items
 SCOPES = [
-    'Mail.Read',
-    'Mail.ReadWrite'
+    'https://graph.microsoft.com/Mail.Read',
+    'https://graph.microsoft.com/Mail.ReadWrite'
 ]
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -46,13 +44,12 @@ def get_outlook_service() -> GraphServiceClient:
 
     logging.info(f"Initializing Microsoft Graph client (tenant: {tenant_id})...")
 
-    # InteractiveBrowserCredential opens a browser window for the user
-    # to sign in. Token cache is persisted automatically by the SDK.
     credential = InteractiveBrowserCredential(
         client_id=client_id,
         tenant_id=tenant_id,
+        timeout=60, # Prevent indefinite hang if auth fails or user abandons
         cache_persistence_options=TokenCachePersistenceOptions(
-            name="gdphub_outlook_cache",
+            name="gdphub_outlook_cache_v3",
             allow_unencrypted_storage=True  # Falls back to plaintext if OS keyring unavailable
         )
     )

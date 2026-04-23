@@ -1,5 +1,7 @@
 fastapi
 uvicorn
+python-multipart
+psutil
 pytesseract
 pymupdf
 python-docx
@@ -11,7 +13,6 @@ pandas
 openpyxl
 tqdm
 ollama
-psutil
 google-api-python-client
 google-auth-httplib2
 google-auth-oauthlib

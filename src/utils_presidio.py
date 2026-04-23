@@ -1,10 +1,7 @@
-# --- utils_presidio.py ---
 # Centralized Microsoft Presidio configuration for PII detection and anonymization.
-# Replaces the custom dictionary-based name masking and regex-based email/plate
-# masking with a production-grade NLP pipeline backed by spaCy NER models.
-#
-# Supports dual-language analysis (Italian + English) and custom recognizers
-# for EU license plates and Italian fiscal codes.
+# Replaces custom dictionary-based name masking with a production-grade NLP pipeline
+# backed by spaCy NER models. Supports dual-language analysis (Italian + English)
+# and custom recognizers for EU license plates and Italian fiscal codes.
 
 import logging
 from typing import Tuple, Optional
@@ -14,10 +11,7 @@ from presidio_analyzer.nlp_engine import NlpEngineProvider
 from presidio_anonymizer import AnonymizerEngine
 from presidio_anonymizer.entities import OperatorConfig
 
-
-# ═══════════════════════════════════════════════════════════
-#  Entity Configuration
-# ═══════════════════════════════════════════════════════════
+# --- ENTITY CONFIGURATION ---
 
 # All PII entity types to detect during analysis
 ENTITIES_TO_DETECT = [
@@ -44,10 +38,7 @@ OPERATORS = {
     "DEFAULT":        OperatorConfig("replace", {"new_value": "<PII>"}),
 }
 
-
-# ═══════════════════════════════════════════════════════════
-#  Custom Recognizers — EU License Plates
-# ═══════════════════════════════════════════════════════════
+# --- CUSTOM RECOGNIZERS: EU LICENSE PLATES ---
 
 # These patterns cover Italian and major EU plate formats.
 # Ported from the original regex collection in 1_extract_text.py.
@@ -92,10 +83,7 @@ def _build_license_plate_recognizer_en() -> PatternRecognizer:
         name="EuLicensePlateRecognizerEN",
     )
 
-
-# ═══════════════════════════════════════════════════════════
-#  Engine Factories
-# ═══════════════════════════════════════════════════════════
+# --- ENGINE FACTORIES ---
 
 def create_analyzer() -> AnalyzerEngine:
     """
@@ -135,10 +123,7 @@ def create_anonymizer() -> AnonymizerEngine:
     """Creates and returns a Presidio AnonymizerEngine."""
     return AnonymizerEngine()
 
-
-# ═══════════════════════════════════════════════════════════
-#  Main Anonymization Interface
-# ═══════════════════════════════════════════════════════════
+# --- MAIN ANONYMIZATION INTERFACE ---
 
 def anonymize_text(
     text: str,

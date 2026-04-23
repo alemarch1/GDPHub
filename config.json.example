@@ -1,6 +1,0 @@
-{
-  "active_source": "local",
-  "input_folder": "./data/input",
-  "database_folder": "./data/output",
-  "log_folder": "./logs"
-}

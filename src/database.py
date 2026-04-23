@@ -1,3 +1,7 @@
+# Database engine configuration and session management for GDPHub.
+# Uses SQLite with WAL mode for concurrent read access and SQLModel/SQLAlchemy ORM.
+# The database path is resolved from config.json at import time.
+
 import json
 from pathlib import Path
 from sqlalchemy import event
@@ -9,6 +13,7 @@ PROJECT_ROOT = SCRIPT_DIR.parent
 CONFIG_FILE = SCRIPT_DIR / "config.json"
 
 def _get_db_path():
+    """Resolves the database file path from config.json, with a fallback default."""
     try:
         with open(CONFIG_FILE, "r", encoding="utf-8") as f:
             c = json.load(f)
@@ -32,6 +37,7 @@ engine = create_engine(
 
 @event.listens_for(engine, "connect")
 def set_sqlite_pragma(dbapi_connection, connection_record):
+    """Configures SQLite pragmas (WAL mode, foreign keys) on each new connection."""
     cursor = dbapi_connection.cursor()
     cursor.execute("PRAGMA journal_mode=WAL")
     cursor.execute("PRAGMA synchronous=NORMAL")
@@ -39,9 +45,11 @@ def set_sqlite_pragma(dbapi_connection, connection_record):
     cursor.close()
 
 def create_db_and_tables():
+    """Creates all registered SQLModel tables if they don't already exist."""
     SQLModel.metadata.create_all(engine)
 
 def get_session():
+    """Returns a new SQLModel database session."""
     return Session(engine)
 
 if __name__ == "__main__":

@@ -1,3 +1,8 @@
+# Secure document deletion service for GDPHub.
+# Orchestrates the three-phase deletion workflow: Cloud (Gmail/Outlook trash),
+# Filesystem (local file removal), and Database (record cleanup).
+# Supports both automated batch runs and manual per-document deletion.
+
 import os
 import asyncio
 import logging
@@ -8,7 +13,7 @@ from sqlmodel import Session, select
 from models import Document, DocumentLifecycle, ProcessedEmail
 from config_manager import get_config
 
-# --- Google API Wrapper ---
+# --- GMAIL API WRAPPER ---
 class GoogleAPIJanitor:
     """
     Internal wrapper to handle Gmail trashing via the official API service.
@@ -21,7 +26,7 @@ class GoogleAPIJanitor:
         self.service.users().messages().trash(userId='me', id=msg_id).execute()
 
 
-# --- Microsoft Graph API Wrapper ---
+# --- OUTLOOK / MICROSOFT GRAPH API WRAPPER ---
 class OutlookAPIJanitor:
     """
     Internal wrapper to handle Outlook message deletion via Microsoft Graph API.
@@ -42,6 +47,7 @@ class OutlookAPIJanitor:
         await self.client.me.messages.by_message_id(msg_id).move.post(body)
 
 
+# --- JANITOR CLOUD SERVICE FACTORY ---
 def _get_janitor_for_source(source: str):
     """
     Returns the appropriate cloud API janitor based on the email source.
@@ -66,6 +72,7 @@ def _get_janitor_for_source(source: str):
             return None
 
 
+# --- MAIN DELETION WORKFLOW ---
 def execute_deletion_workflow(db_session: Session, specific_document_ids: list[str] = None, ignore_status: bool = False) -> dict:
     """
     Janitor service to securely delete emails across Cloud, Filesystem, and Database.
@@ -87,7 +94,7 @@ def execute_deletion_workflow(db_session: Session, specific_document_ids: list[s
             janitor_cache[source] = _get_janitor_for_source(source)
         return janitor_cache[source]
 
-    # 1. SCOPE IDENTIFICATION
+    # Scope identification: find records eligible for deletion
     if specific_document_ids is not None:
         # Manual override: Process specific IDs provided by UI
         if ignore_status:
@@ -116,8 +123,7 @@ def execute_deletion_workflow(db_session: Session, specific_document_ids: list[s
     if not targets:
         return results
 
-    # 2. CONCURRENCY CONTROL
-    # Immediate update to prevent other workers from grabbing the same records
+    # Concurrency control: lock records to prevent parallel processing
     target_ids = [t.document_id for t in targets]
     db_session.execute(
         update(DocumentLifecycle)
@@ -126,7 +132,7 @@ def execute_deletion_workflow(db_session: Session, specific_document_ids: list[s
     )
     db_session.commit()
 
-    # 3. IDEMPOTENT DELETION SEQUENCE
+    # Idempotent deletion sequence for each target
     for lifecycle_rec in targets:
         # Fetch the master document record
         doc = db_session.exec(select(Document).where(Document.id == lifecycle_rec.document_id)).first()
@@ -140,7 +146,7 @@ def execute_deletion_workflow(db_session: Session, specific_document_ids: list[s
             continue
 
         try:
-            # STEP A: Cloud Deletion (Gmail Trash or Outlook Deleted Items)
+            # Phase A: Cloud deletion (Gmail Trash or Outlook Deleted Items)
             if doc.parent_id:
                 # Determine source from ProcessedEmail record, fall back to active_source
                 source = active_source
@@ -164,7 +170,7 @@ def execute_deletion_workflow(db_session: Session, specific_document_ids: list[s
                 else:
                     logging.warning(f"No cloud janitor available for source '{source}', skipping cloud deletion.")
 
-            # STEP B: Filesystem Deletion
+            # Phase B: Filesystem deletion
             if doc.file_path:
                 try:
                     p = os.path.normpath(doc.file_path)
@@ -175,7 +181,7 @@ def execute_deletion_workflow(db_session: Session, specific_document_ids: list[s
                 except Exception as fs_err:
                     raise fs_err
 
-            # STEP C: Database Atomic Transaction
+            # Phase C: Database atomic transaction
             with db_session.begin_nested():
                 # Mark lifecycle as completed
                 lifecycle_rec.status = "DELETED"

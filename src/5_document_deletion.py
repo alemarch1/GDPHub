@@ -1,4 +1,3 @@
-# --- 5_document_deletion.py ---
 # This script acts as the automated 'Janitor' for the GDPHub pipeline.
 # It identifies documents that have reached their scheduled deletion date
 # and securely removes them from the Cloud (Gmail), Filesystem, and Database.
@@ -11,8 +10,10 @@ from database import get_session, create_db_and_tables
 from deletion_service import execute_deletion_workflow
 from utils_logging import setup_logging
 
+# --- MAIN EXECUTION LOGIC ---
 def main():
-    # 1. Setup Argument Parsing
+    """Main entry point for the GDPHub Janitor service."""
+    # --- ARGUMENT PARSING ---
     parser = argparse.ArgumentParser(description="GDPHub Janitor - Secure Document Deletion Service")
     parser.add_argument(
         "--ids", 
@@ -26,7 +27,7 @@ def main():
     )
     args = parser.parse_args()
 
-    # 2. Setup Logging
+    # --- LOGGING SYSTEM CONFIGURATION ---
     setup_logging("5_document_deletion")
     
     if args.ids:
@@ -41,7 +42,7 @@ def main():
         logging.critical(f"Database initialization failed: {db_init_err}")
         sys.exit(1)
 
-    # 3. Execute Workflow
+    # --- WORKFLOW EXECUTION ---
     try:
         with get_session() as session:
             # Pass args.ids (will be None if not provided, triggering batch mode)
@@ -51,7 +52,7 @@ def main():
                 ignore_status=args.force
             )
             
-            # 4. Report Results
+            # --- RESULT REPORTING ---
             success_count = summary.get("success", 0)
             failed_count = summary.get("failed", 0)
             

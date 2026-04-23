@@ -1,3 +1,7 @@
+# Centralized configuration manager for GDPHub.
+# Provides get/set operations backed by SQLite, with values stored as
+# serialized JSON strings to preserve structure (dicts, lists, etc.).
+
 import json
 from typing import Any, Optional
 from sqlmodel import Session, select

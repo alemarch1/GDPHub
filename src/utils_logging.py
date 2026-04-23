@@ -1,3 +1,6 @@
+# Centralized logging configuration for all GDPHub pipeline scripts.
+# Provides rotating file logs and console output with configurable log levels.
+
 import logging
 from logging.handlers import RotatingFileHandler
 import sys

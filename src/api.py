@@ -1,3 +1,8 @@
+# FastAPI backend for the GDPHub web interface.
+# Provides REST endpoints for configuration management, pipeline execution,
+# document lifecycle operations, ROPA management, and the Janitor service.
+# Serves the static frontend from the /web directory.
+
 import os
 import sys
 import json
@@ -16,6 +21,7 @@ from sqlmodel import select, delete
 from config_manager import get_config, set_config, Configuration
 from deletion_service import execute_deletion_workflow
 
+# --- APPLICATION INITIALIZATION ---
 ACTIVE_PROCESS_PID = None
 app = FastAPI(title="GDPHub Platform")
 create_db_and_tables()
@@ -33,6 +39,7 @@ PROJECT_ROOT = SCRIPT_DIR.parent
 CONFIG_FILE = SCRIPT_DIR / 'config.json'
 WEBUI_DIR = PROJECT_ROOT / 'web'
 
+# --- CONFIGURATION ENDPOINTS ---
 @app.get("/api/config")
 async def get_app_config():
     """Retrieves all configuration from the database."""
@@ -80,8 +87,10 @@ async def save_app_config(request: Request):
             
     return {"status": "success"}
 
+# --- OLLAMA MODEL ENDPOINTS ---
 @app.get("/api/ollama/models")
 async def get_ollama_models():
+    """Retrieves the list of available Ollama models from the configured server."""
     try:
         classify_cfg = get_config("classify_text.py", {})
         url = classify_cfg.get("ollama_url", "http://localhost:11434")
@@ -98,7 +107,9 @@ async def get_ollama_models():
     except Exception as e:
         return {"models": [], "error": str(e)}
 
+# --- UTILITY ENDPOINTS ---
 def _ask_folder_logic(initial_dir):
+    """Opens a native tkinter folder selection dialog (runs in a thread)."""
     import tkinter as tk
     from tkinter import filedialog
     try:
@@ -127,7 +138,10 @@ async def browse_local_folder(current_path: str = None):
         print(f"[GDPHub API] Error opening folder dialog: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+# --- PIPELINE EXECUTION ENGINE ---
 async def run_script_generator(script_name: str, args: list):
+    """Async generator that spawns a pipeline script and streams its stdout as SSE events."""
+    global ACTIVE_PROCESS_PID
     script_path = SCRIPT_DIR / script_name
     if not script_path.exists():
         yield f"data: [Error] Cannot find script {script_path}\n\n"
@@ -151,7 +165,6 @@ async def run_script_generator(script_name: str, args: list):
             env=env
         )
         
-        global ACTIVE_PROCESS_PID
         ACTIVE_PROCESS_PID = process.pid
         
 
@@ -196,6 +209,15 @@ async def run_script_generator(script_name: str, args: list):
             yield f"data: \n\ndata: [SUCCESS] {script_name} completed successfully!\n\n"
         else:
             yield f"data: \n\ndata: [ERROR] {script_name} exited with status {process.returncode}\n\n"
+    except asyncio.CancelledError:
+        if 'process' in locals() and process.returncode is None:
+            try:
+                process.terminate()
+                # Await termination to ensure pipes are closed
+                await process.wait()
+            except Exception:
+                pass
+        raise
     except Exception as e:
         yield f"data: Exception running script: {str(e)}\n\n"
     finally:
@@ -204,6 +226,7 @@ async def run_script_generator(script_name: str, args: list):
 
 @app.post("/api/control/{action}")
 async def process_control(action: str):
+    """Pauses, resumes, or stops the currently running pipeline subprocess."""
     if action not in ["pause", "resume", "stop"]:
         raise HTTPException(status_code=400, detail="Invalid action")
     
@@ -226,10 +249,12 @@ async def process_control(action: str):
 
 @app.post("/api/run/{script_name}")
 async def run_pipeline_post(script_name: str, request: Request):
+    """Launches a pipeline script by name and returns a streaming SSE response."""
     data = await request.json()
     args = data.get("args", [])
     return StreamingResponse(run_script_generator(script_name, args), media_type="text/event-stream")
 
+# --- ROPA MANAGEMENT ENDPOINTS ---
 @app.post("/api/upload_ropa")
 async def upload_ropa_file(file: UploadFile = File(...)):
     """Uploads a ROPA file (CSV/Excel) to the ROPA folder."""
@@ -245,6 +270,7 @@ async def upload_ropa_file(file: UploadFile = File(...)):
 
 @app.get("/api/ropa")
 async def get_ropa():
+    """Returns all ROPA records from the database."""
     try:
         with get_session() as session:
             records = session.exec(select(RopaRecord)).all()
@@ -266,6 +292,7 @@ async def get_ropa():
 
 @app.post("/api/ropa")
 async def save_ropa(request: Request):
+    """Replaces all ROPA records in the database with the provided data."""
     try:
         data = await request.json()
         ropa_list = data.get("data", [])
@@ -290,8 +317,10 @@ async def save_ropa(request: Request):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+# --- DOCUMENT AND IDENTIFICATION ENDPOINTS ---
 @app.get("/api/documents")
 async def get_docs():
+    """Returns all extracted documents with their latest classification."""
     try:
         with get_session() as session:
             docs = session.exec(select(Document)).all()
@@ -323,6 +352,7 @@ async def get_docs():
 
 @app.get("/api/identified")
 async def get_identified():
+    """Returns all document-to-ROPA mappings with associated metadata."""
     try:
         with get_session() as session:
             mappings = session.exec(select(DocumentRopaMapping)).all()
@@ -357,8 +387,10 @@ async def get_identified():
     except Exception as e:
         return {"data": []}
 
+# --- LIFECYCLE AND JANITOR ENDPOINTS ---
 @app.get("/api/lifecycle")
 async def get_lifecycle():
+    """Returns all document lifecycle records with classification metadata."""
     try:
         query = """
         SELECT 
@@ -399,6 +431,7 @@ async def get_lifecycle():
 
 @app.post("/api/lifecycle/{lifecycle_id}")
 async def update_lifecycle(lifecycle_id: int, request: Request):
+    """Updates the status and notes of a specific lifecycle record."""
     try:
         data = await request.json()
         new_status = data.get("status")
@@ -451,11 +484,13 @@ async def run_janitor_manual(request: Request):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-# Mount Frontend App statically at the end so it doesn't mask /api routes
+# --- STATIC FRONTEND MOUNT ---
+# Must be last so it doesn't mask /api routes
 if WEBUI_DIR.exists():
     app.mount("/", StaticFiles(directory=str(WEBUI_DIR), html=True), name="webui")
 
+# --- MAIN SCRIPT EXECUTION BLOCK ---
 if __name__ == "__main__":
     import uvicorn
-    print("Starting GDPHub API on http://0.0.0.0:8000 ...")
+    print("Starting GDPHub API server on 0.0.0.0:8000...")
     uvicorn.run(app, host="0.0.0.0", port=8000)

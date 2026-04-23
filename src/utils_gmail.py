@@ -1,3 +1,7 @@
+# Gmail authentication and service initialization for GDPHub.
+# Handles OAuth2 token loading, refreshing, and the interactive consent flow.
+# Verifies that the resulting credentials include 'modify' scope for the Janitor.
+
 import os
 import logging
 from pathlib import Path
@@ -7,9 +11,10 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from config_manager import get_config
 
-# REQUIRED SCOPES:
-# We need gmail.readonly for extraction and gmail.modify for the Janitor (trashing messages).
-# We also include the 'Full' scope (https://mail.google.com/) as a superset fallback.
+# Scopes required:
+# - gmail.readonly: list and read messages for extraction
+# - gmail.modify: move messages to Trash for the Janitor
+# - mail.google.com: superset fallback for full access
 SCOPES = [
     'https://www.googleapis.com/auth/gmail.readonly',
     'https://www.googleapis.com/auth/gmail.modify',
@@ -32,7 +37,7 @@ def get_gmail_service():
 
     creds = None
     
-    # 1. Attempt to load existing tokens
+    # Attempt to load existing tokens
     if token_file.exists():
         try:
             # Note: Scopes in token.json might be different than the current SCOPES list
@@ -40,7 +45,7 @@ def get_gmail_service():
         except Exception as e:
             logging.error(f"Failed to load existing token.json: {e}")
 
-    # 2. Re-authenticate if credentials are missing or invalid
+    # Re-authenticate if credentials are missing or invalid
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
             try:
@@ -67,8 +72,7 @@ def get_gmail_service():
         except Exception as e:
              logging.error(f"Error saving token.json: {e}")
 
-    # 3. VERIFY SCOPES (Requested by User)
-    # If the user previously authorized 'readonly' only, the token will lack 'modify' or 'full' access.
+    # Verify scopes include modify/full access (required by the Janitor)
     authorized_scopes = creds.scopes if creds.scopes else []
     
     has_modify_access = any(s in authorized_scopes for s in [
@@ -80,7 +84,7 @@ def get_gmail_service():
         logging.critical("SECURITY ERROR: API access is limited to READ-ONLY.")
         logging.info("The Janitor requires 'gmail.modify' or 'mail.google.com' to move messages to the Trash.")
         
-        # We raise a PermissionError to halt execution as requested.
+        # Halt execution: the Janitor cannot function without modify access
         raise PermissionError(
             "Gmail API access does not allow message deletion (missing 'modify' or 'full' scope). "
             "To fix this, delete 'token.json' and re-run the script to perform a full re-authorization."

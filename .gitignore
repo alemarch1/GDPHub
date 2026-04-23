@@ -9,12 +9,7 @@ Thumbs.db
 desktop.ini
 
 # Project specific data (Personal/Sensitive)
-data/
-logs/
-output/
-Output/
 ROPA/
-A4ROPA/
 
 # Scratch / experiments
 scratch/
@@ -28,11 +23,6 @@ src/web/
 *.csv
 *.json
 *.JSON
-
-# Exceptions: files that MUST be tracked
-!web/locales/*.json
-!config.json.example
-!Dummy_Ropa.csv
 
 # Specific exclusion for config.json to prevent uploading local paths
 config.json
@@ -54,3 +44,13 @@ estrazione_*.json
 classificazione_*.json
 identify_*.json
 extracted_documents.json
+
+#DB Files
+GDPHub.db-shm
+GDPHub.db-wal
+
+# Exceptions: files that MUST be tracked
+!web/locales/*.json
+!config.json.example
+!Dummy_Ropa.csv
+!GDPHub.db

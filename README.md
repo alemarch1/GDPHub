@@ -2,6 +2,42 @@
 
 An advanced, automated Python pipeline designed to extract, anonymize, classify, and intelligently map enterprise documents and emails directly to your GDPR Record of Processing Activities (ROPA) utilizing local Large Language Models (LLMs) and a robust SQLite backbone.
 
+---
+
+## 🖱️ Quick Start (1-Click Deployment)
+
+GDPHub ships with **ready-made scripts** so you can install and launch the full environment without typing a single command.
+
+**The only prerequisite you need to install manually is [Python 3.10+](https://www.python.org/downloads/).** The installer script will check for everything else and guide you through any missing components.
+
+| Prerequisite | Required? | Download Link |
+|---|---|---|
+| **Python 3.10+** | ✅ Required | [python.org/downloads](https://www.python.org/downloads/) |
+| **Ollama** | ✅ Required for AI classification | [ollama.com](https://ollama.com/) |
+| **Tesseract OCR** | ⬜ Optional — only for scanned images/OCR | [github.com/tesseract-ocr](https://github.com/tesseract-ocr/tesseract) |
+
+> [!NOTE]
+> **Tesseract is not mandatory.** It is only needed if you plan to process scanned images or image-based PDFs. The email pipeline, text extraction, and all other pipeline stages work perfectly without it.
+
+### Windows
+
+1. **Install dependencies:** Double-click **`install.bat`**. It will detect what's already installed, skip it, install missing Python packages, download spaCy NLP models, and offer to set up Ollama and Tesseract.
+2. **Launch GDPHub:** Double-click **`start.bat`**. The server starts and your default browser opens to `http://localhost:8000`.
+
+### macOS / Linux
+
+1. **Make scripts executable** (one-time only):
+   ```bash
+   chmod +x install.command start.command
+   ```
+2. **Install dependencies:** Double-click **`install.command`** (or run `./install.command` in a terminal).
+3. **Launch GDPHub:** Double-click **`start.command`** (or run `./start.command` in a terminal).
+
+> [!NOTE]
+> On macOS, you may need to right-click → **Open** the `.command` files the first time to bypass Gatekeeper.
+
+---
+
 ## 🚀 Key Features
 
 - **Unified Data Sourcing:** Natively process directories of local files or securely fetch live emails and attachments from **Gmail** (Google OAuth2) or **Microsoft 365 / Outlook** (Microsoft Graph API). Attachments are parsed intelligently, maintaining strict hierarchical inheritance (`parent_id`, `type`).
@@ -38,7 +74,7 @@ To run GDPHub correctly, ensure the physical host complies with the environmenta
 ### 1. Core Environmental Software
 * **Python 3.10+**
 * **Local LLM Server:** Install [Ollama](https://ollama.com/) locally. Ensure you pull the default configured inference model before running the pipeline (e.g., `ollama pull gemma3:4b`).
-* **Tesseract OCR:** Requires a valid host installation of Tesseract OCR to read images.
+* **Tesseract OCR (Optional):** Only required if you need to process scanned images or image-based PDFs. Not needed for the email pipeline or text-based document processing.
   * *Windows:* Download the `.exe` installer. Update the physical absolute `tesseract_path` executable route under `extract_text.py` in the Configuration page.
   * *Linux/Mac:* `sudo apt install tesseract-ocr` / `brew install tesseract`.
 * **spaCy NLP Models:** Required by the Presidio anonymization engine:
@@ -120,6 +156,42 @@ python src/5_document_deletion.py --ids <UUID1> <UUID2> --force
 
 Un'avanzata pipeline Python automatizzata, progettata per estrarre, anonimizzare, classificare e mappare in modo intelligente documenti ed email aziendali, integrandoli direttamente con il Registro dei Trattamenti (ROPA) ai fini GDPR tramite l'utilizzo di Modelli Linguistici (LLM) eseguiti in locale e un solido backend SQLite.
 
+---
+
+## 🖱️ Avvio Rapido (Installazione 1-Click)
+
+GDPHub include **script pronti all'uso** per installare e avviare l'intero ambiente senza digitare un solo comando.
+
+**L'unico prerequisito da installare manualmente è [Python 3.10+](https://www.python.org/downloads/).** Lo script di installazione verificherà tutto il resto e ti guiderà nell'installazione dei componenti mancanti.
+
+| Prerequisito | Obbligatorio? | Link Download |
+|---|---|---|
+| **Python 3.10+** | ✅ Obbligatorio | [python.org/downloads](https://www.python.org/downloads/) |
+| **Ollama** | ✅ Obbligatorio per la classificazione AI | [ollama.com](https://ollama.com/) |
+| **Tesseract OCR** | ⬜ Opzionale — solo per immagini scannerizzate/OCR | [github.com/tesseract-ocr](https://github.com/tesseract-ocr/tesseract) |
+
+> [!NOTE]
+> **Tesseract non è obbligatorio.** È necessario solo se prevedi di elaborare immagini scannerizzate o PDF basati su immagini. La pipeline email, l'estrazione testo e tutte le altre fasi funzionano perfettamente senza di esso.
+
+### Windows
+
+1. **Installa dipendenze:** Fai doppio click su **`install.bat`**. Rileverà automaticamente cosa è già installato, salterà i componenti presenti, installerà i pacchetti Python mancanti, scaricherà i modelli NLP spaCy, e offrirà di configurare Ollama e Tesseract.
+2. **Avvia GDPHub:** Fai doppio click su **`start.bat`**. Il server si avvia e il browser predefinito si apre su `http://localhost:8000`.
+
+### macOS / Linux
+
+1. **Rendi eseguibili gli script** (solo la prima volta):
+   ```bash
+   chmod +x install.command start.command
+   ```
+2. **Installa dipendenze:** Fai doppio click su **`install.command`** (oppure esegui `./install.command` da terminale).
+3. **Avvia GDPHub:** Fai doppio click su **`start.command`** (oppure esegui `./start.command` da terminale).
+
+> [!NOTE]
+> Su macOS, potrebbe essere necessario fare click destro → **Apri** sui file `.command` la prima volta per superare il Gatekeeper.
+
+---
+
 ## 🚀 Funzionalità Principali
 
 - **Fonti Dati Unificate:** Elabora cartelle locali o estrae email e allegati in tempo reale e in sicurezza da caselle **Gmail** (Google OAuth2) o **Microsoft 365 / Outlook** (Microsoft Graph API). Supporta l'innesto intelligente degli allegati ereditando relazioni genitore-figlio (`parent_id`, `type`).
@@ -156,7 +228,7 @@ Per eseguire correttamente GDPHub, assicurati che la macchina di esecuzione supp
 ### 1. Elementi Software Principali
 * **Python 3.10+**
 * **Server LLM Locale:** Installa [Ollama](https://ollama.com/) e scarica un modello AI target prima del lancio (Es: `ollama pull gemma3:4b`).
-* **Tesseract OCR:** Modulo richiesto per le routine OCR visive.
+* **Tesseract OCR (Opzionale):** Necessario solo per elaborare immagini scannerizzate o PDF basati su immagini. Non richiesto per la pipeline email o l'elaborazione di documenti testuali.
   * *Windows:* Scarica il file installer `.exe`. Aggiorna il percorso `tesseract_path` dalla pagina di Configurazione della WebUI.
   * *Linux/MacOS:* `sudo apt install tesseract-ocr` o similare.
 * **Modelli NLP spaCy:** Richiesti dal motore di anonimizzazione Presidio:

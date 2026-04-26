@@ -307,13 +307,20 @@ async def run_script_generator(script_name: str, args: list):
     """Async generator that spawns a pipeline script and streams its stdout as SSE events."""
     global ACTIVE_PROCESS_PID
     
-    # Validate script_name strictly as a filename to prevent path injection
+    # Validate script_name as a plain filename and enforce SCRIPT_DIR containment
     if not script_name or "/" in script_name or "\\" in script_name or ".." in script_name:
         yield "data: [Error] Access denied: Invalid script name\n\n"
         yield "data: [END]\n\n"
         return
         
-    script_path = SCRIPT_DIR / script_name
+    base_dir = SCRIPT_DIR.resolve()
+    script_path = (base_dir / script_name).resolve()
+    try:
+        script_path.relative_to(base_dir)
+    except ValueError:
+        yield "data: [Error] Access denied: Invalid script path\n\n"
+        yield "data: [END]\n\n"
+        return
     if not script_path.exists():
         yield f"data: [Error] Cannot find script {script_path}\n\n"
         yield "data: [END]\n\n"

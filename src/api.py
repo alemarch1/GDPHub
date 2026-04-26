@@ -308,14 +308,6 @@ async def run_script_generator(script_name: str, args: list):
     """Async generator that spawns a pipeline script and streams its stdout as SSE events."""
     global ACTIVE_PROCESS_PID
     
-    # Validate script_name as a safe plain filename and enforce SCRIPT_DIR containment
-    # Allow only simple Python filenames (no path separators, traversal, or special chars).
-    if (
-        not script_name
-        or "/" in script_name
-        or "\\" in script_name
-        or ".." in script_name
-        or not re.fullmatch(r"[A-Za-z0-9._-]+\.py", script_name)
     # Validate script_name as a strict plain filename and enforce SCRIPT_DIR containment
     script_leaf = Path(script_name).name if script_name else ""
     if (

@@ -127,14 +127,14 @@
                             </div>
                             <div class="grid-form">
                                 <div class="form-group">
-                                    <label for="gmail-credentials">{{ t('cfg_credentials_file') }}</label>
-                                    <input type="text" id="gmail-credentials" v-model="config.mail.credentials_file"
-                                        placeholder="credentials.json">
+                                    <label for="gmail-client-id">{{ t('cfg_gmail_client_id') || 'Gmail Client ID' }}</label>
+                                    <input type="text" id="gmail-client-id" v-model="config.mail.client_id" 
+                                           placeholder="12345-abcde.apps.googleusercontent.com">
                                 </div>
                                 <div class="form-group">
-                                    <label for="gmail-token">{{ t('cfg_token_file') }}</label>
-                                    <input type="text" id="gmail-token" v-model="config.mail.token_file"
-                                        placeholder="token.json">
+                                    <label for="gmail-client-secret">{{ t('cfg_gmail_client_secret') || 'Gmail Client Secret' }}</label>
+                                    <input type="text" id="gmail-client-secret" v-model="config.mail.client_secret"
+                                           placeholder="GOCSPX-12345...">
                                 </div>
                                 <div class="form-group full-width">
                                     <label for="gmail-query">{{ t('cfg_search_query') }}</label>

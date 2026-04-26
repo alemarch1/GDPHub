@@ -8,14 +8,14 @@ from sqlmodel import SQLModel, Field, Relationship
 
 class ProcessedEmail(SQLModel, table=True):
     """Tracks email message IDs that have already been downloaded."""
-    __tablename__ = "processed_email"
+    __tablename__ = "processed_email"  # type: ignore[assignment]
     id: str = Field(primary_key=True)
     source: str = Field(default="gmail")  # "gmail" or "outlook"
     processing_date: datetime = Field(default_factory=datetime.utcnow)
 
 class DocumentClassification(SQLModel, table=True):
     """Stores Ollama-generated classifications for a document."""
-    __tablename__ = "document_classification"
+    __tablename__ = "document_classification"  # type: ignore[assignment]
     id: Optional[int] = Field(default=None, primary_key=True)
     document_id: str = Field(foreign_key="document.id", index=True, ondelete="CASCADE")
     model_used: str
@@ -29,7 +29,7 @@ class DocumentClassification(SQLModel, table=True):
 
 class DocumentRopaMapping(SQLModel, table=True):
     """Maps a document to one or more ROPA processing activities."""
-    __tablename__ = "document_ropa_mapping"
+    __tablename__ = "document_ropa_mapping"  # type: ignore[assignment]
     id: Optional[int] = Field(default=None, primary_key=True)
     document_id: str = Field(foreign_key="document.id", index=True, ondelete="CASCADE")
     ropa_id: Optional[str] = Field(default=None, index=True) # Soft link to RopaRecord
@@ -57,7 +57,7 @@ class Document(SQLModel, table=True):
 
 class RopaRecord(SQLModel, table=True):
     """A single row from the ROPA (Register of Processing Activities)."""
-    __tablename__ = "ropa_record"
+    __tablename__ = "ropa_record"  # type: ignore[assignment]
     id: str = Field(primary_key=True) # "0001", "0002"
     activity: str
     lawful_bases: str
@@ -69,7 +69,7 @@ class RopaRecord(SQLModel, table=True):
 
 class DocumentLifecycle(SQLModel, table=True):
     """Tracks the retention lifecycle and deletion status of a document."""
-    __tablename__ = "document_lifecycle"
+    __tablename__ = "document_lifecycle"  # type: ignore[assignment]
     id: Optional[int] = Field(default=None, primary_key=True)
     document_id: str = Field(index=True)
     document_type: Optional[str] = None

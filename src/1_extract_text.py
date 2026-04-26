@@ -14,7 +14,7 @@ import logging
 from pathlib import Path
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from tqdm import tqdm
-from typing import Tuple, Optional
+from typing import Optional, Tuple
 from datetime import datetime
 
 from database import get_session, create_db_and_tables
@@ -53,13 +53,15 @@ else:
 
 from utils_logging import setup_logging
 from utils_presidio import create_analyzer, create_anonymizer, anonymize_text
+from presidio_analyzer import AnalyzerEngine
+from presidio_anonymizer import AnonymizerEngine
 
 # --- PER-WORKER PRESIDIO ENGINE GLOBALS ---
 # These are initialized inside each worker process via worker_init().
 # spaCy models cannot be pickled across process boundaries, so each
 # worker must create its own AnalyzerEngine and AnonymizerEngine.
-_worker_analyzer = None
-_worker_anonymizer = None
+_worker_analyzer: Optional[AnalyzerEngine] = None
+_worker_anonymizer: Optional[AnonymizerEngine] = None
 
 # --- GENERAL UTILITY FUNCTIONS ---
 def clean_text(text: str) -> str:
@@ -113,18 +115,18 @@ def extract_text_from_pdf(file_path: Path) -> str:
             return ""
 
         doc = fitz.open(str(file_path)) 
-        for i, page in enumerate(doc):
+        for i, page in enumerate(doc):  # type: ignore[arg-type]  # fitz.Document is iterable at runtime
             if i >= 20 and not ocr_triggered_on_doc:
                  logging.info(f"PDF {file_path.name}: Reading interrupted after 20 textual pages.")
                  break
-            page_text = page.get_text("text").strip()
+            page_text = page.get_text("text").strip()  # type: ignore[union-attr]  # incomplete fitz stubs
             if not page_text and i < max_ocr_pages_limit:
                 ocr_triggered_on_doc = True
                 logging.info(f"PDF {file_path.name}, page {i+1}: empty text, starting OCR.")
                 try:
                     factor = get_scaling_factor(page.rect.width, page.rect.height)
-                    pix = page.get_pixmap(matrix=fitz.Matrix(factor, factor))
-                    img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+                    pix = page.get_pixmap(matrix=fitz.Matrix(factor, factor))  # type: ignore[union-attr]  # incomplete fitz stubs
+                    img = Image.frombytes("RGB", (pix.width, pix.height), pix.samples)
                     page_text = pytesseract.image_to_string(img, lang='ita+eng').strip()
                     logging.info(f"PDF {file_path.name}, page {i+1}: OCR completed.")
                 except Exception as ocr_e:
@@ -332,7 +334,11 @@ def process_file(file_path: Path) -> dict | None:
         logging.info(f"No extractor for format '{ext}' of {file_path.name}. Skipped.")
         return None
 
-    masked_text, pii_flag = anonymize_text(extracted_text, _worker_analyzer, _worker_anonymizer)
+    if _worker_analyzer is None or _worker_anonymizer is None:
+        logging.error("Presidio engines not initialized in worker. Returning raw text.")
+        masked_text, pii_flag = extracted_text, False
+    else:
+        masked_text, pii_flag = anonymize_text(extracted_text, _worker_analyzer, _worker_anonymizer)
     
     file_type = "File"
     parent_id = None

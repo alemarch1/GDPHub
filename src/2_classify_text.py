@@ -99,7 +99,7 @@ def parse_arguments():
 
 CLI_ARGS = parse_arguments()
 
-def select_ollama_model(client: ollama.Client, default_model: str, force_model: str = None) -> str:
+def select_ollama_model(client: ollama.Client, default_model: str, force_model: str | None = None) -> str:
     """Allows the user to select an Ollama model or uses the forced/default one."""
     if force_model:
         logging.info(f"Model forcefully set via CLI: {force_model}")
@@ -152,8 +152,8 @@ def _execute_ollama_request_with_timeout(
     logging.info(f"Sending '{log_context_description}' request to Ollama (model: {model_name}).")
     start_time = time.time()
     
-    result_holder = [None] 
-    exception_holder = [None]
+    result_holder: list[str | None] = [None]
+    exception_holder: list[Exception | None] = [None]
 
     def ollama_worker():
         try:
@@ -162,23 +162,19 @@ def _execute_ollama_request_with_timeout(
             if disable_thinking:
                 processed_prompt = "DO NOT use <think> tags. Answer directly.\n\n" + prompt_content
 
-            chat_kwargs = {
-                "model": model_name,
-                "messages": [{"role": "user", "content": processed_prompt}],
-                "options": ollama_api_options
-            }
+            _messages: list[dict[str, str]] = [{"role": "user", "content": processed_prompt}]
             
             # Try with think=False first; if the library doesn't support it, retry without
             response = None
             if disable_thinking:
                 try:
-                    response = client.chat(**chat_kwargs, think=False)
+                    response = client.chat(model=model_name, messages=_messages, options=ollama_api_options, think=False)
                 except TypeError:
                     # Library version doesn't support 'think' parameter — fall back
                     logging.info(f"'think' parameter not supported by ollama library, using prompt-only approach.")
-                    response = client.chat(**chat_kwargs)
+                    response = client.chat(model=model_name, messages=_messages, options=ollama_api_options)
             else:
-                response = client.chat(**chat_kwargs)
+                response = client.chat(model=model_name, messages=_messages, options=ollama_api_options)
 
             raw_content = response.get("message", {}).get("content", "").strip()
             
@@ -269,7 +265,7 @@ def classify_document_text(
     return (final_value if final_value else error_default, elapsed)
 
 # --- MAIN DOCUMENT CLASSIFICATION PROCESS ---
-def process_document_classifications(target_file_id: str = None) -> None:
+def process_document_classifications(target_file_id: str | None = None) -> None:
     """Processes documents from DB, classifies them, and saves the results iteratively in DB."""
     create_db_and_tables()
     try:

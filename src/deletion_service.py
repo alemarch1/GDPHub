@@ -73,7 +73,7 @@ def _get_janitor_for_source(source: str):
 
 
 # --- MAIN DELETION WORKFLOW ---
-def execute_deletion_workflow(db_session: Session, specific_document_ids: list[str] = None, ignore_status: bool = False) -> dict:
+def execute_deletion_workflow(db_session: Session, specific_document_ids: list[str] | None = None, ignore_status: bool = False) -> dict:
     """
     Janitor service to securely delete emails across Cloud, Filesystem, and Database.
     
@@ -100,22 +100,22 @@ def execute_deletion_workflow(db_session: Session, specific_document_ids: list[s
         if ignore_status:
             # Delete regardless of status (e.g. even if ON_HOLD)
             stmt = select(DocumentLifecycle).where(
-                DocumentLifecycle.document_id.in_(specific_document_ids)
+                DocumentLifecycle.document_id.in_(specific_document_ids)  # type: ignore[attr-defined]
             )
         else:
             # Respect PENDING status
             stmt = select(DocumentLifecycle).where(
                 and_(
-                    DocumentLifecycle.document_id.in_(specific_document_ids),
-                    DocumentLifecycle.status == "PENDING"
+                    DocumentLifecycle.document_id.in_(specific_document_ids),  # type: ignore[attr-defined]
+                    DocumentLifecycle.status == "PENDING"  # type: ignore[arg-type]
                 )
             )
     else:
         # Automated batch: Records past their scheduled deletion date
         stmt = select(DocumentLifecycle).where(
             and_(
-                DocumentLifecycle.status == "PENDING",
-                DocumentLifecycle.scheduled_deletion_date <= datetime.now(timezone.utc)
+                DocumentLifecycle.status == "PENDING",  # type: ignore[arg-type]
+                DocumentLifecycle.scheduled_deletion_date <= datetime.now(timezone.utc)  # type: ignore[arg-type]
             )
         )
 
@@ -127,7 +127,7 @@ def execute_deletion_workflow(db_session: Session, specific_document_ids: list[s
     target_ids = [t.document_id for t in targets]
     db_session.execute(
         update(DocumentLifecycle)
-        .where(DocumentLifecycle.document_id.in_(target_ids))
+        .where(DocumentLifecycle.document_id.in_(target_ids))  # type: ignore[attr-defined]
         .values(status="PROCESSING")
     )
     db_session.commit()

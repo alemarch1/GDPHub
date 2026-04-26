@@ -83,7 +83,7 @@ const app = createApp({
             database_folder: '',
             log_folder: '',
             log_level: 'INFO',
-            mail: { credentials_file: '', token_file: '', query: '', max_emails: 50, import_override_days: 0, delete_after_processing: false, import_override_ignore_processed: false },
+            mail: { client_id: '', client_secret: '', query: '', max_emails: 50, import_override_days: 0, delete_after_processing: false, import_override_ignore_processed: false },
             ext: { tesseract_path: '', max_workers: 12 },
             cls: { ollama_url: 'http://localhost:11434', ollama_model_default: '', title_max_length: 500, text_max_length: 1500, timeout_seconds: 30, api_request_timeout: 25, options: { temperature: 0.2, num_ctx: 4096, top_p: 0.9, top_k: 40, num_predict: 64 } },
             ropa: { ropa_folder: '' },
@@ -111,8 +111,9 @@ const app = createApp({
                 config.log_level = data.log_level || 'INFO';
 
                 const gmail = data['0_extract_mail.py'] || {};
-                config.mail.credentials_file = gmail.credentials_file || '';
-                config.mail.token_file = gmail.token_file || '';
+                const gmailAuth = data['0_extract_mail_gmail_auth'] || {};
+                config.mail.client_id = gmailAuth.client_id || '';
+                config.mail.client_secret = gmailAuth.client_secret || '';
                 config.mail.query = gmail.query || '';
                 config.mail.max_emails = gmail.max_emails || 50;
                 config.mail.import_override_days = gmail.import_override_days || 0;
@@ -160,7 +161,14 @@ const app = createApp({
                 database_folder: config.database_folder,
                 log_folder: config.log_folder,
                 log_level: config.log_level,
-                "0_extract_mail.py": { ...config.mail },
+                "0_extract_mail_gmail_auth": { client_id: config.mail.client_id, client_secret: config.mail.client_secret },
+                "0_extract_mail.py": { 
+                    query: config.mail.query, 
+                    max_emails: config.mail.max_emails, 
+                    import_override_days: config.mail.import_override_days,
+                    delete_after_processing: config.mail.delete_after_processing,
+                    import_override_ignore_processed: config.mail.import_override_ignore_processed
+                },
                 "extract_text.py": { ...config.ext },
                 "classify_text.py": {
                     ollama_url: config.cls.ollama_url,

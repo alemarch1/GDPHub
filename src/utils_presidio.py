@@ -4,12 +4,13 @@
 # and custom recognizers for EU license plates and Italian fiscal codes.
 
 import logging
-from typing import Tuple, Optional
+from typing import List, Tuple, Optional
 
 from presidio_analyzer import AnalyzerEngine, PatternRecognizer, Pattern, RecognizerRegistry
 from presidio_analyzer.nlp_engine import NlpEngineProvider
 from presidio_anonymizer import AnonymizerEngine
 from presidio_anonymizer.entities import OperatorConfig
+from presidio_anonymizer.entities import RecognizerResult as AnonymizerRecognizerResult
 
 # --- ENTITY CONFIGURATION ---
 
@@ -189,9 +190,21 @@ def anonymize_text(
         if not results:
             return text, False
 
+        # Convert analyzer RecognizerResult to anonymizer RecognizerResult
+        # to satisfy type invariance (the two libraries define separate classes)
+        anonymizer_results: List[AnonymizerRecognizerResult] = [
+            AnonymizerRecognizerResult(
+                entity_type=r.entity_type,
+                start=r.start,
+                end=r.end,
+                score=r.score,
+            )
+            for r in results
+        ]
+
         anonymized = anonymizer.anonymize(
             text=text,
-            analyzer_results=results,
+            analyzer_results=anonymizer_results,
             operators=OPERATORS,
         )
         return anonymized.text, True

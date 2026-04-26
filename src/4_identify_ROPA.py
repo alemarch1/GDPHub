@@ -74,7 +74,7 @@ def get_models(client: ollama.Client) -> list:
         logging.error(f"Error retrieving models from Ollama: {e}", exc_info=True)
         return []
 
-def select_ollama_model(client: ollama.Client, force_model: str = None) -> str:
+def select_ollama_model(client: ollama.Client, force_model: str | None = None) -> str:
     """Allows the user to select an Ollama model or uses the forced/default one."""
     if force_model:
         logging.info(f"Model forcefully set via CLI: {force_model}")
@@ -156,19 +156,15 @@ def query_llm_for_document(client: ollama.Client, doc: dict, ropa_list: list) ->
     result = {'content': ''}
     def call_llm():
         try:
-            chat_kwargs = dict(
-                model=ACTIVE_OLLAMA_MODEL,
-                messages=[{"role": "user", "content": prompt}],
-                options=OLLAMA_OPTIONS,
-                format="json"
-            )
+            _model = ACTIVE_OLLAMA_MODEL
+            _messages: list[dict[str, str]] = [{"role": "user", "content": prompt}]
             if CLI_ARGS.no_think:
                 try:
-                    resp = client.chat(**chat_kwargs, think=False)
+                    resp = client.chat(model=_model, messages=_messages, options=OLLAMA_OPTIONS, format="json", think=False)
                 except TypeError:
-                    resp = client.chat(**chat_kwargs)
+                    resp = client.chat(model=_model, messages=_messages, options=OLLAMA_OPTIONS, format="json")
             else:
-                resp = client.chat(**chat_kwargs)
+                resp = client.chat(model=_model, messages=_messages, options=OLLAMA_OPTIONS, format="json")
             result['content'] = resp.get("message", {}).get("content", "").strip()
         except Exception as e:
             logging.error(f"Ollama error for {file_id}: {e}", exc_info=True)

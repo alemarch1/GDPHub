@@ -31,19 +31,19 @@ def get_gmail_service():
     It also verifies that the resulting credentials have 'gmail.modify' access,
     triggering an error if only 'readonly' is available.
     """
-    mail_config = get_config("0_extract_mail.py", {})
-    credentials_file = SCRIPT_DIR / mail_config.get("credentials_file", "credentials.json")
-    token_file = SCRIPT_DIR / mail_config.get("token_file", "token.json")
-
+    auth_file = SCRIPT_DIR / "auth" / "gmail.json"
+    
     creds = None
     
     # Attempt to load existing tokens
-    if token_file.exists():
+    if auth_file.exists():
         try:
-            # Note: Scopes in token.json might be different than the current SCOPES list
-            creds = Credentials.from_authorized_user_file(str(token_file), SCOPES)
+            # The file acts as BOTH the credentials and the token file.
+            # Credentials.from_authorized_user_file checks for token fields.
+            creds = Credentials.from_authorized_user_file(str(auth_file), SCOPES)
         except Exception as e:
-            logging.error(f"Failed to load existing token.json: {e}")
+            # It might not have token fields yet, which is fine
+            pass
 
     # Re-authenticate if credentials are missing or invalid
     if not creds or not creds.valid:
@@ -52,25 +52,39 @@ def get_gmail_service():
                 creds.refresh(Request())
             except Exception as e:
                  logging.warning(f"Refresh failed: {e}. Forcing interactive login.")
-                 if not credentials_file.exists():
-                     raise FileNotFoundError(f"Credentials file missing: {credentials_file}")
-                 flow = InstalledAppFlow.from_client_secrets_file(str(credentials_file), SCOPES)
+                 if not auth_file.exists():
+                     logging.error("Google API auth file is missing. Please configure it in the Web UI.")
+                     import sys
+                     sys.exit(1)
+                 flow = InstalledAppFlow.from_client_secrets_file(str(auth_file), SCOPES)
                  creds = flow.run_local_server(port=0)
         else:
-            if not credentials_file.exists():
-                raise FileNotFoundError(f"Google API credentials file {credentials_file} is missing.")
+            if not auth_file.exists():
+                logging.error("Google API auth file is missing.")
+                logging.error("Please configure the Gmail Client ID and Secret in the Configuration tab of the Web UI.")
+                import sys
+                sys.exit(1)
             
             logging.info("Starting interactive Gmail authentication flow...")
-            flow = InstalledAppFlow.from_client_secrets_file(str(credentials_file), SCOPES)
+            flow = InstalledAppFlow.from_client_secrets_file(str(auth_file), SCOPES)
             creds = flow.run_local_server(port=0)
             
         # Save the valid credentials for the next run
+        # We must merge to preserve the "installed" client secrets section
         try:
-            with token_file.open('w') as token:
-                token.write(creds.to_json())
-            logging.info(f"Gmail tokens updated and saved to {token_file}")
+            import json
+            with open(auth_file, "r") as f:
+                data = json.load(f)
+                
+            token_data = json.loads(creds.to_json())
+            data.update(token_data)
+            
+            with open(auth_file, "w") as f:
+                json.dump(data, f, indent=4)
+                
+            logging.info(f"Gmail tokens updated and saved to {auth_file}")
         except Exception as e:
-             logging.error(f"Error saving token.json: {e}")
+             logging.error(f"Error saving to {auth_file}: {e}")
 
     # Verify scopes include modify/full access (required by the Janitor)
     authorized_scopes = creds.scopes if creds.scopes else []

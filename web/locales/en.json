@@ -13,6 +13,8 @@
   "btn_upload_ropa": "Upload & Transform",
   "cfg_active_input": "Input Routing",
   "cfg_api_request_timeout": "API Request Timeout (seconds)",
+  "cfg_gmail_client_id": "Gmail Client ID",
+  "cfg_gmail_client_secret": "Gmail Client Secret",
   "cfg_credentials_file": "OAuth Credentials JSON",
   "cfg_delete_blobs": "Delete original blobs after anonymization",
   "cfg_folder_path": "Target Scan Folder",

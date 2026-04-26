@@ -3,16 +3,29 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+# Virtual environments
+venv/
+.venv/
+env/
+
 # OS generated files
 .DS_Store
 Thumbs.db
 desktop.ini
 
+# Environment variables (sensitive)
+.env
+.env.*
+
 # Scratch / experiments
 scratch/
 
-# Unused duplicate web directory inside src
+# Unused/deprecated directories inside src
 src/web/
+src/serve/
+
+# Authentication / OAuth credentials & tokens (DO NOT UPLOAD)
+src/auth/
 
 # Data files that may contain personal info
 *.xlsx
@@ -25,12 +38,13 @@ src/web/
 config.json
 src/config.json
 
-# Google OAuth Credentials (DO NOT UPLOAD)
-credentials.json
-token.json
-
 # Local databases
 *.db
+
+# Log files (auto-generated)
+*.log
+logs/
+src/logs/
 
 # VS Code & IDEs
 .vscode/
@@ -42,7 +56,7 @@ classificazione_*.json
 identify_*.json
 extracted_documents.json
 
-#DB Files
+# SQLite temporary files
 GDPHub.db-shm
 GDPHub.db-wal
 
@@ -50,4 +64,3 @@ GDPHub.db-wal
 !web/locales/*.json
 !config.json.example
 !Dummy_Ropa.csv
-!GDPHub.db

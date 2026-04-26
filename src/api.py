@@ -7,6 +7,7 @@ import os
 import sys
 import json
 import asyncio
+from typing import Optional
 from pathlib import Path
 from fastapi import FastAPI, Request, UploadFile, File, HTTPException
 from fastapi.responses import StreamingResponse
@@ -24,7 +25,98 @@ from deletion_service import execute_deletion_workflow
 # --- APPLICATION INITIALIZATION ---
 ACTIVE_PROCESS_PID = None
 app = FastAPI(title="GDPHub Platform")
+
 create_db_and_tables()
+
+def _seed_defaults():
+    """Seeds the Configuration and RopaRecord tables with sensible defaults
+    when the database is freshly created (i.e. tables are empty).
+    This ensures the application works out-of-the-box after a fresh clone."""
+    with get_session() as session:
+        # --- Seed Configuration defaults ---
+        existing_configs = session.exec(select(Configuration)).first()
+        if existing_configs is None:
+            defaults = {
+                "active_source": "local",
+                "input_folder": "./data/input",
+                "database_folder": "./data/output",
+                "log_folder": "./logs",
+                "log_level": "INFO",
+                "0_extract_mail.py": {
+                    "query": "",
+                    "max_emails": 50,
+                    "import_override_days": 0,
+                    "delete_after_processing": False,
+                    "import_override_ignore_processed": False
+                },
+                "extract_text.py": {
+                    "tesseract_path": "",
+                    "max_workers": 4
+                },
+                "classify_text.py": {
+                    "ollama_url": "http://localhost:11434",
+                    "ollama_model_default": "gemma3:4b",
+                    "title_max_length": 500,
+                    "text_max_length": 1500,
+                    "timeout_seconds": 60,
+                    "api_request_timeout": 45,
+                    "ollama_options": {
+                        "num_predict": 64,
+                        "temperature": 0.2,
+                        "num_ctx": 4096,
+                        "top_p": 0.9,
+                        "top_k": 40
+                    }
+                },
+                "extract_ROPA.py": {
+                    "ropa_folder": "./data/ROPA"
+                }
+            }
+            for key, value in defaults.items():
+                session.add(Configuration(key=key, value=json.dumps(value)))
+            session.commit()
+            print("[GDPHub] Default configuration seeded into database.")
+
+        # --- Seed example ROPA records ---
+        existing_ropa = session.exec(select(RopaRecord)).first()
+        if existing_ropa is None:
+            example_ropa = [
+                RopaRecord(
+                    id="0001",
+                    activity="Employee Payroll Processing",
+                    lawful_bases="Art. 6(1)(b) Contract, Art. 6(1)(c) Legal Obligation",
+                    subject_categories="Employees, Contractors",
+                    personal_data_categories="Name, Address, Tax ID, Bank Account, Salary",
+                    recipients_categories="Payroll Provider, Tax Authorities",
+                    international_transfers="None",
+                    retention_periods="+3650 days"
+                ),
+                RopaRecord(
+                    id="0002",
+                    activity="Customer Relationship Management",
+                    lawful_bases="Art. 6(1)(b) Contract, Art. 6(1)(f) Legitimate Interest",
+                    subject_categories="Customers, Prospects",
+                    personal_data_categories="Name, Email, Phone, Purchase History",
+                    recipients_categories="CRM Platform, Marketing Team",
+                    international_transfers="None",
+                    retention_periods="+1825 days"
+                ),
+                RopaRecord(
+                    id="0003",
+                    activity="IT Security & Access Logging",
+                    lawful_bases="Art. 6(1)(f) Legitimate Interest",
+                    subject_categories="Employees, System Users",
+                    personal_data_categories="Username, IP Address, Access Timestamps",
+                    recipients_categories="IT Security Team",
+                    international_transfers="None",
+                    retention_periods="+365 days"
+                ),
+            ]
+            session.add_all(example_ropa)
+            session.commit()
+            print("[GDPHub] Example ROPA records seeded into database.")
+
+_seed_defaults()
 
 # Enable CORS for local cross-origin connections during UI dev
 app.add_middleware(
@@ -39,6 +131,10 @@ PROJECT_ROOT = SCRIPT_DIR.parent
 CONFIG_FILE = SCRIPT_DIR / 'config.json'
 WEBUI_DIR = PROJECT_ROOT / 'web'
 
+# Auto-bootstrap directories for GitHub usability
+for dir_path in ["data/input", "data/output", "data/ROPA", "logs", "src/auth"]:
+    (PROJECT_ROOT / dir_path).mkdir(parents=True, exist_ok=True)
+
 # --- CONFIGURATION ENDPOINTS ---
 @app.get("/api/config")
 async def get_app_config():
@@ -46,7 +142,31 @@ async def get_app_config():
     try:
         with get_session() as session:
             configs = session.exec(select(Configuration)).all()
-            return {c.key: json.loads(c.value) for c in configs}
+            result = {c.key: json.loads(c.value) for c in configs}
+            
+            # Inject outlook config from outlook.json
+            outlook_file = SCRIPT_DIR / "auth" / "outlook.json"
+            if outlook_file.exists():
+                try:
+                    with open(outlook_file, "r") as f:
+                        result["0_extract_mail_outlook"] = json.load(f)
+                except Exception:
+                    pass
+                    
+            # Inject gmail auth config from gmail.json
+            gmail_file = SCRIPT_DIR / "auth" / "gmail.json"
+            if gmail_file.exists():
+                try:
+                    with open(gmail_file, "r") as f:
+                        gmail_data = json.load(f)
+                        installed = gmail_data.get("installed", {})
+                        result["0_extract_mail_gmail_auth"] = {
+                            "client_id": installed.get("client_id", ""),
+                            "client_secret": installed.get("client_secret", "")
+                        }
+                except Exception:
+                    pass
+            return result
     except Exception as e:
         # Fallback to config.json if DB is not available
         if CONFIG_FILE.exists():
@@ -61,7 +181,46 @@ async def save_app_config(request: Request):
     
     # Update Database
     for key, value in data.items():
-        set_config(key, value)
+        if key == "0_extract_mail_outlook":
+            outlook_file = SCRIPT_DIR / "auth" / "outlook.json"
+            outlook_file.parent.mkdir(parents=True, exist_ok=True)
+            outlook_data = {}
+            if outlook_file.exists():
+                try:
+                    with open(outlook_file, "r") as f:
+                        outlook_data = json.load(f)
+                except Exception:
+                    pass
+            outlook_data.update(value)
+            with open(outlook_file, "w") as f:
+                json.dump(outlook_data, f, indent=4)
+        elif key == "0_extract_mail_gmail_auth":
+            gmail_file = SCRIPT_DIR / "auth" / "gmail.json"
+            gmail_file.parent.mkdir(parents=True, exist_ok=True)
+            gmail_data = {}
+            if gmail_file.exists():
+                try:
+                    with open(gmail_file, "r") as f:
+                        gmail_data = json.load(f)
+                except Exception:
+                    pass
+            
+            # Preserve existing token data if it exists
+            if "installed" not in gmail_data:
+                gmail_data["installed"] = {}
+                
+            gmail_data["installed"]["client_id"] = value.get("client_id", "")
+            gmail_data["installed"]["client_secret"] = value.get("client_secret", "")
+            gmail_data["installed"]["project_id"] = "gdphub"
+            gmail_data["installed"]["auth_uri"] = "https://accounts.google.com/o/oauth2/auth"
+            gmail_data["installed"]["token_uri"] = "https://oauth2.googleapis.com/token"
+            gmail_data["installed"]["auth_provider_x509_cert_url"] = "https://www.googleapis.com/oauth2/v1/certs"
+            gmail_data["installed"]["redirect_uris"] = ["http://localhost"]
+            
+            with open(gmail_file, "w") as f:
+                json.dump(gmail_data, f, indent=4)
+        else:
+            set_config(key, value)
         
     # Sync bootstrap paths back to config.json to maintain path resolution
     bootstrap_keys = ["database_folder", "log_folder", "input_folder"]
@@ -124,7 +283,7 @@ def _ask_folder_logic(initial_dir):
         return None
 
 @app.get("/api/utils/browse-folder")
-async def browse_local_folder(current_path: str = None):
+async def browse_local_folder(current_path: Optional[str] = None):
     """Opens a native OS folder dialog on the server and returns the selected path."""
     print(f"[GDPHub API] Request: browse-folder (current: {current_path})")
     
@@ -151,6 +310,7 @@ async def run_script_generator(script_name: str, args: list):
     cmd = [sys.executable, str(script_path)] + args
     yield f"data: Running command: {' '.join(cmd)}\n\n"
     
+    process: Optional[asyncio.subprocess.Process] = None
     try:
         # We enforce unbuffered stdout so Python doesn't delay streaming until the buffer is full
         env = os.environ.copy()
@@ -167,6 +327,7 @@ async def run_script_generator(script_name: str, args: list):
         
         ACTIVE_PROCESS_PID = process.pid
         
+        assert process.stdout is not None
 
         import re
         buf = b""
@@ -210,7 +371,7 @@ async def run_script_generator(script_name: str, args: list):
         else:
             yield f"data: \n\ndata: [ERROR] {script_name} exited with status {process.returncode}\n\n"
     except asyncio.CancelledError:
-        if 'process' in locals() and process.returncode is None:
+        if process is not None and process.returncode is None:
             try:
                 process.terminate()
                 # Await termination to ensure pipes are closed
@@ -261,6 +422,8 @@ async def upload_ropa_file(file: UploadFile = File(...)):
     try:
         ropa_dir = PROJECT_ROOT / "data" / "ROPA"
         ropa_dir.mkdir(parents=True, exist_ok=True)
+        if not file.filename:
+            raise HTTPException(status_code=400, detail="No filename provided.")
         file_path = ropa_dir / file.filename
         with open(file_path, "wb") as f:
             f.write(await file.read())

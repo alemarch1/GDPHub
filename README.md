@@ -89,7 +89,7 @@ Ensure your environment is provisioned with all library structures required by t
 ```bash
 pip install -r requirements.txt
 ```
-*(Packages include fastapi, uvicorn, pytesseract, PyMuPDF, python-docx, Pillow, xlrd, striprtf, odfpy, pandas, openpyxl, tqdm, ollama, sqlmodel, presidio-analyzer, presidio-anonymizer, spacy, Google APIs, msgraph-sdk, and azure-identity).*
+*(Packages include fastapi, uvicorn, pytesseract, PyMuPDF, python-docx, Pillow, xlrd, striprtf, odfpy, pandas, openpyxl, tqdm, ollama, sqlmodel, presidio-analyzer, presidio-anonymizer, spacy, Google APIs, msal, msgraph-sdk, and azure-identity).*
 
 > **Note:** For native Windows legacy `.doc` extraction via Word COM interfaces, `pywin32` is additionally required (automatically included on Windows via `requirements.txt`).
 
@@ -99,7 +99,7 @@ If utilizing Gmail as a data source via `0_extract_mail.py`:
 2. Enable the **Gmail API**.
 3. Create an **OAuth Consent Screen** and add the required scopes: `gmail.readonly`, `gmail.modify`, and `mail.google.com`.
 4. Generate an **OAuth Client ID** for a "Desktop app".
-5. Download the resultant JSON and rename it strictly to `credentials.json`, persisting it securely within the `src/` directory.
+5. Enter the **Client ID** and **Client Secret** in the GDPHub Configuration page under "Gmail Extraction Engine". The credentials are stored automatically in `src/auth/gmail.json`.
 
 ### 4. Microsoft Azure App Registration (Outlook / Microsoft 365 Source Only)
 If utilizing Outlook as a data source via `0_extract_mail.py`:
@@ -252,7 +252,7 @@ Se utilizzi Gmail come sorgente dati tramite `0_extract_mail.py`:
 2. Abilita le risorse per **Gmail API**.
 3. Crea una **Schermata di consenso OAuth** e aggiungi gli scope richiesti: `gmail.readonly`, `gmail.modify` e `mail.google.com`.
 4. Genera credenziali di tipo **OAuth Client ID** per applicativo "Desktop app".
-5. Scarica il JSON, rinominalo in `credentials.json` e conservalo nella cartella `src/`.
+5. Inserisci il **Client ID** e il **Client Secret** nella pagina Configurazione di GDPHub sotto "Gmail Extraction Engine". Le credenziali vengono salvate automaticamente in `src/auth/gmail.json`.
 
 ### 4. Registrazione App Microsoft Azure (Solo Sorgente Outlook / Microsoft 365)
 Se utilizzi Outlook come sorgente dati tramite `0_extract_mail.py`:

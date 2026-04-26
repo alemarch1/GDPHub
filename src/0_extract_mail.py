@@ -369,9 +369,14 @@ def main():
 
     if active_source == "outlook":
         # ── Outlook / Microsoft Graph path ──
-        outlook_config = get_config("0_extract_mail_outlook", {})
+        outlook_auth_file = SCRIPT_DIR / "auth" / "outlook.json"
+        outlook_config = {}
+        if outlook_auth_file.exists():
+            with open(outlook_auth_file, "r") as f:
+                outlook_config = json.load(f)
+        
         if not outlook_config:
-            logging.error("Missing '0_extract_mail_outlook' section in the configuration database.")
+            logging.error(f"Missing outlook configuration. Please check {outlook_auth_file}.")
             sys.exit(1)
 
         max_emails = outlook_config.get("max_emails", 50)

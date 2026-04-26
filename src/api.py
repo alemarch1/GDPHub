@@ -264,7 +264,7 @@ async def get_ollama_models():
             models.append(default)
         return {"models": models, "default": default, "url": url}
     except Exception as e:
-        return {"models": [], "error": str(e)}
+        return {"models": [], "error": "An internal error occurred retrieving models"}
 
 # --- UTILITY ENDPOINTS ---
 def _ask_folder_logic(initial_dir):
@@ -287,7 +287,15 @@ async def browse_local_folder(current_path: Optional[str] = None):
     """Opens a native OS folder dialog on the server and returns the selected path."""
     print(f"[GDPHub API] Request: browse-folder (current: {current_path})")
     
-    initial_dir = current_path if current_path and os.path.exists(current_path) else None
+    initial_dir = None
+    if current_path:
+        try:
+            # Sanitize and resolve the path to prevent directory traversal
+            safe_path = Path(current_path).resolve()
+            if safe_path.exists() and safe_path.is_dir():
+                initial_dir = str(safe_path)
+        except Exception:
+            pass
     # Run tkinter dialog in a separate thread to avoid freezing the FastAPI event loop
     try:
         selected_path = await asyncio.to_thread(_ask_folder_logic, initial_dir)
@@ -295,13 +303,20 @@ async def browse_local_folder(current_path: Optional[str] = None):
         return {"path": selected_path if selected_path else None}
     except Exception as e:
         print(f"[GDPHub API] Error opening folder dialog: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="An internal server error occurred")
 
 # --- PIPELINE EXECUTION ENGINE ---
 async def run_script_generator(script_name: str, args: list):
     """Async generator that spawns a pipeline script and streams its stdout as SSE events."""
     global ACTIVE_PROCESS_PID
-    script_path = SCRIPT_DIR / script_name
+    
+    # Prevent path injection / directory traversal
+    script_path = (SCRIPT_DIR / script_name).resolve()
+    if script_path.parent != SCRIPT_DIR.resolve():
+        yield f"data: [Error] Access denied: Invalid script path\n\n"
+        yield "data: [END]\n\n"
+        return
+        
     if not script_path.exists():
         yield f"data: [Error] Cannot find script {script_path}\n\n"
         yield "data: [END]\n\n"
@@ -380,7 +395,8 @@ async def run_script_generator(script_name: str, args: list):
                 pass
         raise
     except Exception as e:
-        yield f"data: Exception running script: {str(e)}\n\n"
+        print(f"[GDPHub API] Exception running script: {e}")
+        yield "data: Exception running script: An internal error occurred while executing the pipeline.\n\n"
     finally:
         ACTIVE_PROCESS_PID = None
         yield "data: [END]\n\n"
@@ -405,7 +421,7 @@ async def process_control(action: str):
                 p.kill()
                 return {"status": "stopped"}
         except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e))
+            raise HTTPException(status_code=500, detail="An internal server error occurred")
     return {"status": "no process"}
 
 @app.post("/api/run/{script_name}")
@@ -429,7 +445,7 @@ async def upload_ropa_file(file: UploadFile = File(...)):
             f.write(await file.read())
         return {"status": "success", "file_path": str(file_path)}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="An internal server error occurred")
 
 @app.get("/api/ropa")
 async def get_ropa():
@@ -451,7 +467,7 @@ async def get_ropa():
                 })
             return {"data": data}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="An internal server error occurred")
 
 @app.post("/api/ropa")
 async def save_ropa(request: Request):
@@ -478,7 +494,7 @@ async def save_ropa(request: Request):
             session.commit()
         return {"status": "success"}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="An internal server error occurred")
 
 # --- DOCUMENT AND IDENTIFICATION ENDPOINTS ---
 @app.get("/api/documents")
@@ -613,7 +629,7 @@ async def update_lifecycle(lifecycle_id: int, request: Request):
         conn.close()
         return {"status": "success"}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="An internal server error occurred")
 
 
 @app.post("/api/janitor/run")
@@ -624,7 +640,7 @@ async def run_janitor_batch():
             results = execute_deletion_workflow(db_session=session, specific_document_ids=None)
             return {"status": "success", "summary": results}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="An internal server error occurred")
 
 @app.post("/api/janitor/delete-manual")
 async def run_janitor_manual(request: Request):

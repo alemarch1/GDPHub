@@ -304,32 +304,33 @@ async def browse_local_folder(current_path: Optional[str] = None):
         raise HTTPException(status_code=500, detail="An internal server error occurred")
 
 # --- PIPELINE EXECUTION ENGINE ---
+
+# Allowlist of pipeline scripts that can be executed via the API.
+# This eliminates path-injection risk: user input is only used as a
+# lookup key, never concatenated into a filesystem path.
+ALLOWED_PIPELINE_SCRIPTS: dict[str, str] = {
+    "0_extract_mail.py":       "0_extract_mail.py",
+    "1_extract_text.py":       "1_extract_text.py",
+    "2_classify_text.py":      "2_classify_text.py",
+    "3_extract_ROPA.py":       "3_extract_ROPA.py",
+    "4_identify_ROPA.py":      "4_identify_ROPA.py",
+    "5_document_deletion.py":  "5_document_deletion.py",
+}
+
 async def run_script_generator(script_name: str, args: list):
     """Async generator that spawns a pipeline script and streams its stdout as SSE events."""
     global ACTIVE_PROCESS_PID
     
-    # Validate script_name as a strict plain filename and enforce SCRIPT_DIR containment
-    script_leaf = Path(script_name).name if script_name else ""
-    if (
-        not script_name
-        or script_leaf != script_name
-        or not script_name.endswith(".py")
-        or not all(ch.isalnum() or ch in ("_", "-", ".") for ch in script_name)
-    ):
-        yield "data: [Error] Access denied: Invalid script name\n\n"
+    # Resolve script via allowlist — user input never touches the filesystem directly
+    safe_filename = ALLOWED_PIPELINE_SCRIPTS.get(script_name)
+    if safe_filename is None:
+        yield "data: [Error] Access denied: Invalid or disallowed script name\n\n"
         yield "data: [END]\n\n"
         return
-        
-    base_dir = SCRIPT_DIR.resolve()
-    script_path = (base_dir / script_name).resolve()
-    try:
-        script_path.relative_to(base_dir)
-    except ValueError:
-        yield "data: [Error] Access denied: Invalid script path\n\n"
-        yield "data: [END]\n\n"
-        return
+
+    script_path = (SCRIPT_DIR / safe_filename).resolve()
     if not script_path.exists():
-        yield f"data: [Error] Cannot find script {script_path}\n\n"
+        yield f"data: [Error] Cannot find script {safe_filename}\n\n"
         yield "data: [END]\n\n"
         return
     

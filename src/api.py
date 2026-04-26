@@ -307,8 +307,14 @@ async def run_script_generator(script_name: str, args: list):
     """Async generator that spawns a pipeline script and streams its stdout as SSE events."""
     global ACTIVE_PROCESS_PID
     
-    # Validate script_name as a plain filename and enforce SCRIPT_DIR containment
-    if not script_name or "/" in script_name or "\\" in script_name or ".." in script_name:
+    # Validate script_name as a strict plain filename and enforce SCRIPT_DIR containment
+    script_leaf = Path(script_name).name if script_name else ""
+    if (
+        not script_name
+        or script_leaf != script_name
+        or not script_name.endswith(".py")
+        or not all(ch.isalnum() or ch in ("_", "-", ".") for ch in script_name)
+    ):
         yield "data: [Error] Access denied: Invalid script name\n\n"
         yield "data: [END]\n\n"
         return

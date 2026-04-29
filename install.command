@@ -18,13 +18,13 @@ echo "============================================================"
 echo ""
 
 # =========================================================================
-#  STEP 1 - Verify Python
+#  STEP 1 - Verify Python & Setup Virtual Environment
 # =========================================================================
 echo "[1/5] Verifying Python installation..."
 if command -v python3 &> /dev/null; then
-    PYTHON_CMD="python3"
+    BASE_PYTHON="python3"
 elif command -v python &> /dev/null; then
-    PYTHON_CMD="python"
+    BASE_PYTHON="python"
 else
     echo ""
     echo "[ERROR] Python is not installed or not found in PATH."
@@ -34,30 +34,122 @@ else
     exit 1
 fi
 
-$PYTHON_CMD --version
+$BASE_PYTHON --version
 echo "       Python found successfully."
 echo ""
 
-# Verify pip is available
-if ! $PYTHON_CMD -m pip --version &> /dev/null; then
-    echo "[ERROR] pip is not installed."
-    echo "        Install it with: $PYTHON_CMD -m ensurepip --upgrade"
-    echo ""
-    read -rp "Press Enter to exit..."
+echo "       Setting up Virtual Environment (venv)..."
+
+create_venv() {
+    if ! $BASE_PYTHON -m venv venv; then
+        echo ""
+        echo "[WARNING] Virtual environment creation failed."
+        echo "          Attempting to automatically install the 'venv' package via apt..."
+        
+        if command -v apt-get &> /dev/null; then
+            PY_VER=$($BASE_PYTHON -c 'import sys; print(f"python{sys.version_info.major}.{sys.version_info.minor}-venv")')
+            echo "          Running: sudo apt-get update && sudo apt-get install -y $PY_VER"
+            sudo apt-get update > /dev/null 2>&1 || true
+            sudo apt-get install -y "$PY_VER"
+            
+            echo "          Retrying virtual environment creation..."
+            rm -rf venv
+            if ! $BASE_PYTHON -m venv venv; then
+                echo "[ERROR] Still failed to create virtual environment."
+                rm -rf venv
+                read -rp "Press Enter to exit..."
+                exit 1
+            fi
+        else
+            echo "[ERROR] Could not detect apt-get. You must install the venv package manually."
+            rm -rf venv
+            read -rp "Press Enter to exit..."
+            exit 1
+        fi
+    fi
+}
+
+if [ ! -d "venv" ]; then
+    create_venv
+    echo "       Virtual environment created."
+else
+    echo "       Virtual environment already exists."
+    # Basic sanity check to ensure the venv isn't broken (needs both python and pip)
+    VENV_OK=false
+    if [ -f "venv/bin/python" ] && [ -f "venv/bin/pip" ]; then
+        VENV_OK=true
+    elif [ -f "venv/Scripts/python.exe" ] && [ -f "venv/Scripts/pip.exe" ]; then
+        VENV_OK=true
+    fi
+
+    if [ "$VENV_OK" = false ]; then
+        echo "[WARNING] Existing virtual environment is broken or missing pip."
+        echo "          Removing it to try again..."
+        rm -rf venv
+        create_venv
+        echo "       Virtual environment re-created successfully."
+    fi
+fi
+
+# Determine venv python/pip path based on OS
+if [ -f "venv/bin/python" ]; then
+    PYTHON_CMD="$(pwd)/venv/bin/python"
+    PIP_CMD="$(pwd)/venv/bin/pip"
+elif [ -f "venv/Scripts/python.exe" ]; then
+    PYTHON_CMD="$(pwd)/venv/Scripts/python.exe"
+    PIP_CMD="$(pwd)/venv/Scripts/pip.exe"
+else
+    echo "[ERROR] Virtual environment python/pip not found."
     exit 1
 fi
 
-# =========================================================================
-#  STEP 2 - Install Python dependencies (skip already-satisfied)
-# =========================================================================
-echo "[2/5] Checking Python dependencies from requirements.txt..."
+# Ensure basic build tools are up to date in venv
+echo "       Updating pip and core packages..."
+$PIP_CMD install -U pip setuptools wheel || echo "       [WARNING] Failed to update pip. Continuing..."
 
-DRY_RUN_OUTPUT=$($PYTHON_CMD -m pip install --dry-run -r requirements.txt 2>&1 || true)
+# =========================================================================
+#  STEP 2 - Install SpaCy with GPU Support & Project Dependencies
+# =========================================================================
+echo "[2/5] Checking CUDA version and installing dependencies..."
+
+CUDA_VERSION=""
+if command -v nvcc &> /dev/null; then
+    CUDA_VERSION=$(nvcc --version 2>/dev/null | grep -o "release [0-9]*\.[0-9]*" | cut -d' ' -f2)
+elif command -v nvidia-smi &> /dev/null; then
+    CUDA_VERSION=$(nvidia-smi 2>/dev/null | grep -o "CUDA Version: [0-9]*\.[0-9]*" | cut -d' ' -f3)
+fi
+
+SPACY_PKG="spacy"
+if [ -n "$CUDA_VERSION" ]; then
+    echo "       Detected CUDA Version: $CUDA_VERSION"
+    MAJOR=$(echo "$CUDA_VERSION" | cut -d'.' -f1)
+    MINOR=$(echo "$CUDA_VERSION" | cut -d'.' -f2)
+    
+    if [ "$MAJOR" -ge 12 ]; then
+        SPACY_PKG="spacy[cuda12x]"
+    elif [ "$MAJOR" -eq 11 ]; then
+        SPACY_PKG="spacy[cuda11x]"
+    elif [ "$MAJOR" -eq 10 ]; then
+        SPACY_PKG="spacy[cuda10${MINOR}]"
+    else
+        SPACY_PKG="spacy[cuda]"
+    fi
+    echo "       Will install optimized SpaCy for GPU: $SPACY_PKG"
+else
+    echo "       No CUDA detected or macOS. Installing standard CPU SpaCy."
+fi
+
+echo "       Installing SpaCy..."
+$PIP_CMD install -U "$SPACY_PKG"
+
+echo ""
+echo "       Installing other Python dependencies from requirements.txt..."
+DRY_RUN_OUTPUT=$($PIP_CMD install --dry-run -r requirements.txt 2>&1 || true)
 
 if echo "$DRY_RUN_OUTPUT" | grep -qi "Would install"; then
     echo "       Some packages are missing or outdated. Installing now..."
     echo ""
-    $PYTHON_CMD -m pip install -r requirements.txt
+    $PIP_CMD install -r requirements.txt
     echo ""
     echo "       All Python dependencies installed successfully."
 else

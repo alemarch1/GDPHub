@@ -9,11 +9,11 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="style.css?v=41">
+    <link rel="stylesheet" href="style.css?v=42">
     <!-- Vue 3 CDN (Composition API) -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/vue/3.4.21/vue.global.prod.min.js" integrity="sha384-wdamyDHEiblYHsu/XTokGtIeFekZu7xN37Yvkl0NZ7PnhwRB+nwE1ByT7VlwiypE" crossorigin="anonymous"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" integrity="sha384-JcnsjUPPylna1s1fvi1u12X5qjY5OL56iySh75FdtrwhO/SWXgMjoVqcKyIIWOLk" crossorigin="anonymous"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js" integrity="sha384-vuyrTV5nkscLp1knFvt+FIHfKKzmROBq5reruhMRslauj54mW+l2B8b6szMN6lCL" crossorigin="anonymous"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/vue/3.4.21/vue.global.prod.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
 </head>
 
 <body class="light-mode">
@@ -128,13 +128,13 @@
                             <div class="grid-form">
                                 <div class="form-group">
                                     <label for="gmail-client-id">{{ t('cfg_gmail_client_id') || 'Gmail Client ID' }}</label>
-                                    <input type="text" id="gmail-client-id" v-model="config.mail.client_id" 
-                                           placeholder="12345-abcde.apps.googleusercontent.com">
+                                    <input type="text" id="gmail-client-id" v-model="config.mail.client_id"
+                                        placeholder="12345-abcde.apps.googleusercontent.com">
                                 </div>
                                 <div class="form-group">
                                     <label for="gmail-client-secret">{{ t('cfg_gmail_client_secret') || 'Gmail Client Secret' }}</label>
                                     <input type="text" id="gmail-client-secret" v-model="config.mail.client_secret"
-                                           placeholder="GOCSPX-12345...">
+                                        placeholder="GOCSPX-12345...">
                                 </div>
                                 <div class="form-group full-width">
                                     <label for="gmail-query">{{ t('cfg_search_query') }}</label>
@@ -302,10 +302,8 @@
                         <!-- Step 0 -->
                         <div class="card glass action-card">
                             <div class="step-number">1</div>
-                            <h3>{{ config.active_source === 'gmail' ? t('pipe_title_0') : (config.active_source ===
-                                'outlook' ? t('pipe_title_0_outlook') : t('pipe_title_local')) }}</h3>
-                            <p>{{ config.active_source === 'gmail' ? t('pipe_desc_mail') : (config.active_source ===
-                                'outlook' ? t('pipe_desc_outlook') : t('pipe_desc_local')) }}</p>
+                            <h3>{{ config.active_source === 'gmail' ? t('pipe_title_0') : (config.active_source === 'outlook' ? t('pipe_title_0_outlook') : t('pipe_title_local')) }}</h3>
+                            <p>{{ config.active_source === 'gmail' ? t('pipe_desc_mail') : (config.active_source === 'outlook' ? t('pipe_desc_outlook') : t('pipe_desc_local')) }}</p>
 
                             <div v-show="config.active_source === 'local'" style="margin-bottom: 1rem;">
                                 <div class="input-with-browse">
@@ -322,10 +320,8 @@
                                 :class="{ 'btn-success': scriptStatuses['0_extract_mail.py'] === 'success' }"
                                 :disabled="processState === 'running'"
                                 @click="executeScript('0_extract_mail.py', false)">
-                                <span v-if="scriptStatuses['0_extract_mail.py'] === 'success'">✓ {{ currentLang === 'it'
-                                    ? 'Completato' : 'Done' }}</span>
-                                <span v-else>{{ config.active_source === 'outlook' ? t('btn_fetch_outlook') :
-                                    t('btn_fetch_mail') }}</span>
+                                <span v-if="scriptStatuses['0_extract_mail.py'] === 'success'">✓ {{ currentLang === 'it' ? 'Completato' : 'Done' }}</span>
+                                <span v-else>{{ config.active_source === 'outlook' ? t('btn_fetch_outlook') : t('btn_fetch_mail') }}</span>
                             </button>
                         </div>
 
@@ -338,8 +334,7 @@
                                 :class="{ 'btn-success': scriptStatuses['1_extract_text.py'] === 'success' }"
                                 :disabled="processState === 'running'"
                                 @click="executeScript('1_extract_text.py', false)">
-                                <span v-if="scriptStatuses['1_extract_text.py'] === 'success'">✓ {{ currentLang === 'it'
-                                    ? 'Completato' : 'Done' }}</span>
+                                <span v-if="scriptStatuses['1_extract_text.py'] === 'success'">✓ {{ currentLang === 'it' ? 'Completato' : 'Done' }}</span>
                                 <span v-else>{{ t('btn_start_ocr') }}</span>
                             </button>
                         </div>
@@ -363,8 +358,7 @@
                                 :class="{ 'btn-success': scriptStatuses['2_classify_text.py'] === 'success' }"
                                 :disabled="processState === 'running'"
                                 @click="executeScript('2_classify_text.py', true)">
-                                <span v-if="scriptStatuses['2_classify_text.py'] === 'success'">✓ {{ currentLang ===
-                                    'it' ? 'Completato' : 'Done' }}</span>
+                                <span v-if="scriptStatuses['2_classify_text.py'] === 'success'">✓ {{ currentLang === 'it' ? 'Completato' : 'Done' }}</span>
                                 <span v-else>{{ t('btn_launch_intel') }}</span>
                             </button>
                         </div>
@@ -388,8 +382,7 @@
                                 :class="{ 'btn-success': scriptStatuses['4_identify_ROPA.py'] === 'success' }"
                                 :disabled="processState === 'running'"
                                 @click="executeScript('4_identify_ROPA.py', true)">
-                                <span v-if="scriptStatuses['4_identify_ROPA.py'] === 'success'">✓ {{ currentLang ===
-                                    'it' ? 'Completato' : 'Done' }}</span>
+                                <span v-if="scriptStatuses['4_identify_ROPA.py'] === 'success'">✓ {{ currentLang === 'it' ? 'Completato' : 'Done' }}</span>
                                 <span v-else>{{ t('btn_map_data') }}</span>
                             </button>
                         </div>
@@ -478,77 +471,93 @@
                                 <thead>
                                     <tr>
                                         <th class="sortable-th" @click="ropaSortBy('id')">
-    <div class="sortable-th-content">
-        <span>{{ t('th_id') }}</span>
-        <div class="sort-arrows">
-            <span class="sort-arrow" :class="{ active: ropaSortKey === 'id' && ropaSortAsc }">▲</span>
-            <span class="sort-arrow" :class="{ active: ropaSortKey === 'id' && !ropaSortAsc }">▼</span>
-        </div>
-    </div>
-</th>
+                                            <div class="sortable-th-content">
+                                                <span>{{ t('th_id') }}</span>
+                                                <div class="sort-arrows">
+                                                    <span class="sort-arrow"
+                                                        :class="{ active: ropaSortKey === 'id' && ropaSortAsc }">▲</span>
+                                                    <span class="sort-arrow"
+                                                        :class="{ active: ropaSortKey === 'id' && !ropaSortAsc }">▼</span>
+                                                </div>
+                                            </div>
+                                        </th>
                                         <th class="sortable-th" @click="ropaSortBy('Processing Activity')">
-    <div class="sortable-th-content">
-        <span>{{ t('th_activity') }}</span>
-        <div class="sort-arrows">
-            <span class="sort-arrow" :class="{ active: ropaSortKey === 'Processing Activity' && ropaSortAsc }">▲</span>
-            <span class="sort-arrow" :class="{ active: ropaSortKey === 'Processing Activity' && !ropaSortAsc }">▼</span>
-        </div>
-    </div>
-</th>
+                                            <div class="sortable-th-content">
+                                                <span>{{ t('th_activity') }}</span>
+                                                <div class="sort-arrows">
+                                                    <span class="sort-arrow"
+                                                        :class="{ active: ropaSortKey === 'Processing Activity' && ropaSortAsc }">▲</span>
+                                                    <span class="sort-arrow"
+                                                        :class="{ active: ropaSortKey === 'Processing Activity' && !ropaSortAsc }">▼</span>
+                                                </div>
+                                            </div>
+                                        </th>
                                         <th class="sortable-th" @click="ropaSortBy('Lawful Bases')">
-    <div class="sortable-th-content">
-        <span>{{ t('th_purpose') }}</span>
-        <div class="sort-arrows">
-            <span class="sort-arrow" :class="{ active: ropaSortKey === 'Lawful Bases' && ropaSortAsc }">▲</span>
-            <span class="sort-arrow" :class="{ active: ropaSortKey === 'Lawful Bases' && !ropaSortAsc }">▼</span>
-        </div>
-    </div>
-</th>
+                                            <div class="sortable-th-content">
+                                                <span>{{ t('th_purpose') }}</span>
+                                                <div class="sort-arrows">
+                                                    <span class="sort-arrow"
+                                                        :class="{ active: ropaSortKey === 'Lawful Bases' && ropaSortAsc }">▲</span>
+                                                    <span class="sort-arrow"
+                                                        :class="{ active: ropaSortKey === 'Lawful Bases' && !ropaSortAsc }">▼</span>
+                                                </div>
+                                            </div>
+                                        </th>
                                         <th class="sortable-th" @click="ropaSortBy('Data Subject Categories')">
-    <div class="sortable-th-content">
-        <span>{{ t('th_subjects') }}</span>
-        <div class="sort-arrows">
-            <span class="sort-arrow" :class="{ active: ropaSortKey === 'Data Subject Categories' && ropaSortAsc }">▲</span>
-            <span class="sort-arrow" :class="{ active: ropaSortKey === 'Data Subject Categories' && !ropaSortAsc }">▼</span>
-        </div>
-    </div>
-</th>
+                                            <div class="sortable-th-content">
+                                                <span>{{ t('th_subjects') }}</span>
+                                                <div class="sort-arrows">
+                                                    <span class="sort-arrow"
+                                                        :class="{ active: ropaSortKey === 'Data Subject Categories' && ropaSortAsc }">▲</span>
+                                                    <span class="sort-arrow"
+                                                        :class="{ active: ropaSortKey === 'Data Subject Categories' && !ropaSortAsc }">▼</span>
+                                                </div>
+                                            </div>
+                                        </th>
                                         <th class="sortable-th" @click="ropaSortBy('Personal Data Categories')">
-    <div class="sortable-th-content">
-        <span>{{ t('th_personal') }}</span>
-        <div class="sort-arrows">
-            <span class="sort-arrow" :class="{ active: ropaSortKey === 'Personal Data Categories' && ropaSortAsc }">▲</span>
-            <span class="sort-arrow" :class="{ active: ropaSortKey === 'Personal Data Categories' && !ropaSortAsc }">▼</span>
-        </div>
-    </div>
-</th>
+                                            <div class="sortable-th-content">
+                                                <span>{{ t('th_personal') }}</span>
+                                                <div class="sort-arrows">
+                                                    <span class="sort-arrow"
+                                                        :class="{ active: ropaSortKey === 'Personal Data Categories' && ropaSortAsc }">▲</span>
+                                                    <span class="sort-arrow"
+                                                        :class="{ active: ropaSortKey === 'Personal Data Categories' && !ropaSortAsc }">▼</span>
+                                                </div>
+                                            </div>
+                                        </th>
                                         <th class="sortable-th" @click="ropaSortBy('Recipients Categories')">
-    <div class="sortable-th-content">
-        <span>{{ t('th_recipients') }}</span>
-        <div class="sort-arrows">
-            <span class="sort-arrow" :class="{ active: ropaSortKey === 'Recipients Categories' && ropaSortAsc }">▲</span>
-            <span class="sort-arrow" :class="{ active: ropaSortKey === 'Recipients Categories' && !ropaSortAsc }">▼</span>
-        </div>
-    </div>
-</th>
+                                            <div class="sortable-th-content">
+                                                <span>{{ t('th_recipients') }}</span>
+                                                <div class="sort-arrows">
+                                                    <span class="sort-arrow"
+                                                        :class="{ active: ropaSortKey === 'Recipients Categories' && ropaSortAsc }">▲</span>
+                                                    <span class="sort-arrow"
+                                                        :class="{ active: ropaSortKey === 'Recipients Categories' && !ropaSortAsc }">▼</span>
+                                                </div>
+                                            </div>
+                                        </th>
                                         <th class="sortable-th" @click="ropaSortBy('International Transfers')">
-    <div class="sortable-th-content">
-        <span>{{ t('th_transfers') }}</span>
-        <div class="sort-arrows">
-            <span class="sort-arrow" :class="{ active: ropaSortKey === 'International Transfers' && ropaSortAsc }">▲</span>
-            <span class="sort-arrow" :class="{ active: ropaSortKey === 'International Transfers' && !ropaSortAsc }">▼</span>
-        </div>
-    </div>
-</th>
+                                            <div class="sortable-th-content">
+                                                <span>{{ t('th_transfers') }}</span>
+                                                <div class="sort-arrows">
+                                                    <span class="sort-arrow"
+                                                        :class="{ active: ropaSortKey === 'International Transfers' && ropaSortAsc }">▲</span>
+                                                    <span class="sort-arrow"
+                                                        :class="{ active: ropaSortKey === 'International Transfers' && !ropaSortAsc }">▼</span>
+                                                </div>
+                                            </div>
+                                        </th>
                                         <th class="sortable-th" @click="ropaSortBy('Retention Periods')">
-    <div class="sortable-th-content">
-        <span>{{ t('th_retention') }}</span>
-        <div class="sort-arrows">
-            <span class="sort-arrow" :class="{ active: ropaSortKey === 'Retention Periods' && ropaSortAsc }">▲</span>
-            <span class="sort-arrow" :class="{ active: ropaSortKey === 'Retention Periods' && !ropaSortAsc }">▼</span>
-        </div>
-    </div>
-</th>
+                                            <div class="sortable-th-content">
+                                                <span>{{ t('th_retention') }}</span>
+                                                <div class="sort-arrows">
+                                                    <span class="sort-arrow"
+                                                        :class="{ active: ropaSortKey === 'Retention Periods' && ropaSortAsc }">▲</span>
+                                                    <span class="sort-arrow"
+                                                        :class="{ active: ropaSortKey === 'Retention Periods' && !ropaSortAsc }">▼</span>
+                                                </div>
+                                            </div>
+                                        </th>
                                         <th>{{ t('th_actions') }}</th>
                                     </tr>
                                 </thead>
@@ -562,15 +571,17 @@
                                         <td>{{ row["Recipients Categories"] }}</td>
                                         <td>{{ row["International Transfers"] }}</td>
                                         <td>{{ row["Retention Periods"] }}</td>
-                                         <td>
+                                        <td>
                                             <div class="action-btn-group">
-                                                <button class="btn-icon btn-edit" @click="openRopaEditor(ropaDataCache.indexOf(row))"
+                                                <button class="btn-icon btn-edit"
+                                                    @click="openRopaEditor(ropaDataCache.indexOf(row))"
                                                     :title="currentLang === 'it' ? 'Modifica' : 'Edit'">✏️</button>
                                             </div>
                                         </td>
                                     </tr>
                                 </tbody>
                             </table>
+                        </div>
                     </div>
                 </div>
             </section>
@@ -587,24 +598,25 @@
                             <div class="form-group full-width">
                                 <input type="text" v-model="ropaEditingRow.activity">
                             </div>
-                                <div class="form-group full-width">
-                                    <label>{{ t('lbl_purpose') }}</label>
-                                    <div class="custom-multiselect" :class="{ 'active': isBasesDropdownOpen }">
-                                        <div class="multiselect-trigger" @click="toggleBasesDropdown">
-                                            <span class="selected-values-text">
-                                                {{ translateBases(ropaEditingRow.selectedBases.join(', ')) || (currentLang === 'it' ? 'Seleziona basi...' : 'Select bases...') }}
-                                            </span>
-                                            <span class="dropdown-arrow">▼</span>
-                                        </div>
-                                        <div class="multiselect-dropdown" v-if="isBasesDropdownOpen">
-                                            <div v-for="opt in lawfulBasesOptions" :key="opt.id" class="dropdown-item" 
-                                                 @click.stop="ropaEditingRow.selectedBases.includes(opt.id) ? ropaEditingRow.selectedBases.splice(ropaEditingRow.selectedBases.indexOf(opt.id), 1) : ropaEditingRow.selectedBases.push(opt.id)">
-                                                <input type="checkbox" :checked="ropaEditingRow.selectedBases.includes(opt.id)" @click.stop>
-                                                <span>{{ opt.label }}</span>
-                                            </div>
+                            <div class="form-group full-width">
+                                <label>{{ t('lbl_purpose') }}</label>
+                                <div class="custom-multiselect" :class="{ 'active': isBasesDropdownOpen }">
+                                    <div class="multiselect-trigger" @click="toggleBasesDropdown">
+                                        <span class="selected-values-text">
+                                            {{ translateBases(ropaEditingRow.selectedBases.join(', ')) || (currentLang === 'it' ? 'Seleziona basi...' : 'Select bases...') }}
+                                        </span>
+                                        <span class="dropdown-arrow">▼</span>
+                                    </div>
+                                    <div class="multiselect-dropdown" v-if="isBasesDropdownOpen">
+                                        <div v-for="opt in lawfulBasesOptions" :key="opt.id" class="dropdown-item"
+                                            @click.stop="ropaEditingRow.selectedBases.includes(opt.id) ? ropaEditingRow.selectedBases.splice(ropaEditingRow.selectedBases.indexOf(opt.id), 1) : ropaEditingRow.selectedBases.push(opt.id)">
+                                            <input type="checkbox"
+                                                :checked="ropaEditingRow.selectedBases.includes(opt.id)" @click.stop>
+                                            <span>{{ opt.label }}</span>
                                         </div>
                                     </div>
                                 </div>
+                            </div>
                             <div class="form-group">
                                 <label>{{ t('lbl_subjects') }}</label>
                                 <input type="text" v-model="ropaEditingRow.subjects">
@@ -648,77 +660,93 @@
                 :class="{'active-view': currentView === 'dashboard-view', 'hidden-view': currentView !== 'dashboard-view'}">
                 <div class="content-container">
                     <div class="card glass mb-large">
-                        <h3>{{ t('dash_snap_title') }}</h3>
+                        <div class="card-header-flex">
+                            <h3>{{ t('dash_snap_title') }}</h3>
+                            <div class="counter-badge" v-if="pendingCount > 0" :title="t('lbl_pending_docs_hint')">
+                                <span class="counter-icon">🕒</span>
+                                <strong>{{ pendingCount }}</strong> {{ t('lbl_pending_count') }}
+                            </div>
+                        </div>
                         <div class="table-scroll-container restrict-h">
                             <table class="apple-table compact">
                                 <thead>
                                     <tr>
                                         <th class="sortable-th" @click="docsSortBy('file_name')">
-    <div class="sortable-th-content">
-        <span>{{ t('th_filename') }}</span>
-        <div class="sort-arrows">
-            <span class="sort-arrow" :class="{ active: docsSortKey === 'file_name' && docsSortAsc }">▲</span>
-            <span class="sort-arrow" :class="{ active: docsSortKey === 'file_name' && !docsSortAsc }">▼</span>
-        </div>
-    </div>
-</th>
+                                            <div class="sortable-th-content">
+                                                <span>{{ t('th_filename') }}</span>
+                                                <div class="sort-arrows">
+                                                    <span class="sort-arrow"
+                                                        :class="{ active: docsSortKey === 'file_name' && docsSortAsc }">▲</span>
+                                                    <span class="sort-arrow"
+                                                        :class="{ active: docsSortKey === 'file_name' && !docsSortAsc }">▼</span>
+                                                </div>
+                                            </div>
+                                        </th>
                                         <th class="sortable-th" @click="docsSortBy('type')">
-    <div class="sortable-th-content">
-        <span>{{ t('th_type') }}</span>
-        <div class="sort-arrows">
-            <span class="sort-arrow" :class="{ active: docsSortKey === 'type' && docsSortAsc }">▲</span>
-            <span class="sort-arrow" :class="{ active: docsSortKey === 'type' && !docsSortAsc }">▼</span>
-        </div>
-    </div>
-</th>
+                                            <div class="sortable-th-content">
+                                                <span>{{ t('th_type') }}</span>
+                                                <div class="sort-arrows">
+                                                    <span class="sort-arrow"
+                                                        :class="{ active: docsSortKey === 'type' && docsSortAsc }">▲</span>
+                                                    <span class="sort-arrow"
+                                                        :class="{ active: docsSortKey === 'type' && !docsSortAsc }">▼</span>
+                                                </div>
+                                            </div>
+                                        </th>
                                         <th class="sortable-th" @click="docsSortBy('parent_id')">
-    <div class="sortable-th-content">
-        <span>{{ t('th_parent_id') }}</span>
-        <div class="sort-arrows">
-            <span class="sort-arrow" :class="{ active: docsSortKey === 'parent_id' && docsSortAsc }">▲</span>
-            <span class="sort-arrow" :class="{ active: docsSortKey === 'parent_id' && !docsSortAsc }">▼</span>
-        </div>
-    </div>
-</th>
+                                            <div class="sortable-th-content">
+                                                <span>{{ t('th_parent_id') }}</span>
+                                                <div class="sort-arrows">
+                                                    <span class="sort-arrow"
+                                                        :class="{ active: docsSortKey === 'parent_id' && docsSortAsc }">▲</span>
+                                                    <span class="sort-arrow"
+                                                        :class="{ active: docsSortKey === 'parent_id' && !docsSortAsc }">▼</span>
+                                                </div>
+                                            </div>
+                                        </th>
                                         <th class="sortable-th" @click="docsSortBy('classification_generic')">
-    <div class="sortable-th-content">
-        <span>{{ t('th_classification') }}</span>
-        <div class="sort-arrows">
-            <span class="sort-arrow" :class="{ active: docsSortKey === 'classification_generic' && docsSortAsc }">▲</span>
-            <span class="sort-arrow" :class="{ active: docsSortKey === 'classification_generic' && !docsSortAsc }">▼</span>
-        </div>
-    </div>
-</th>
+                                            <div class="sortable-th-content">
+                                                <span>{{ t('th_classification') }}</span>
+                                                <div class="sort-arrows">
+                                                    <span class="sort-arrow"
+                                                        :class="{ active: docsSortKey === 'classification_generic' && docsSortAsc }">▲</span>
+                                                    <span class="sort-arrow"
+                                                        :class="{ active: docsSortKey === 'classification_generic' && !docsSortAsc }">▼</span>
+                                                </div>
+                                            </div>
+                                        </th>
                                         <th class="sortable-th" @click="docsSortBy('description_short')">
-    <div class="sortable-th-content">
-        <span>{{ t('th_description') }}</span>
-        <div class="sort-arrows">
-            <span class="sort-arrow" :class="{ active: docsSortKey === 'description_short' && docsSortAsc }">▲</span>
-            <span class="sort-arrow" :class="{ active: docsSortKey === 'description_short' && !docsSortAsc }">▼</span>
-        </div>
-    </div>
-</th>
+                                            <div class="sortable-th-content">
+                                                <span>{{ t('th_description') }}</span>
+                                                <div class="sort-arrows">
+                                                    <span class="sort-arrow"
+                                                        :class="{ active: docsSortKey === 'description_short' && docsSortAsc }">▲</span>
+                                                    <span class="sort-arrow"
+                                                        :class="{ active: docsSortKey === 'description_short' && !docsSortAsc }">▼</span>
+                                                </div>
+                                            </div>
+                                        </th>
                                         <th class="sortable-th" @click="docsSortBy('names_or_surnames_masked')">
-    <div class="sortable-th-content">
-        <span>{{ t('th_filtered') }}</span>
-        <div class="sort-arrows">
-            <span class="sort-arrow" :class="{ active: docsSortKey === 'names_or_surnames_masked' && docsSortAsc }">▲</span>
-            <span class="sort-arrow" :class="{ active: docsSortKey === 'names_or_surnames_masked' && !docsSortAsc }">▼</span>
-        </div>
-    </div>
-</th>
+                                            <div class="sortable-th-content">
+                                                <span>{{ t('th_filtered') }}</span>
+                                                <div class="sort-arrows">
+                                                    <span class="sort-arrow"
+                                                        :class="{ active: docsSortKey === 'names_or_surnames_masked' && docsSortAsc }">▲</span>
+                                                    <span class="sort-arrow"
+                                                        :class="{ active: docsSortKey === 'names_or_surnames_masked' && !docsSortAsc }">▼</span>
+                                                </div>
+                                            </div>
+                                        </th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     <tr v-for="r in sortedDocsData" :key="r.id">
                                         <td>{{ r.file_name || 'N/A' }}</td>
-                                        <td><span :class="['badge', 'badge-' + (r.type || 'File').toLowerCase()]">{{
-                                                r.type || 'File' }}</span></td>
+                                        <td><span :class="['badge', 'badge-' + (r.type || 'File').toLowerCase()]">{{ r.type || 'File' }}</span></td>
                                         <td>{{ r.parent_id || '-' }}</td>
                                         <td>{{ r.classification_generic || 'Pending' }}</td>
                                         <td>{{ r.description_short || '-' }}</td>
-                                        <td>{{ r.names_or_surnames_masked ? (currentLang === 'it' ? '✅ Sì' : '✅ Yes') :
-                                            (currentLang === 'it' ? '⬜ No' : '⬜ No') }}</td>
+                                        <td>{{ r.names_or_surnames_masked ? (currentLang === 'it' ? '✅ Sì' : '✅ Yes') : (currentLang === 'it' ? '⬜ No' : '⬜ No') }}</td>
                                     </tr>
                                 </tbody>
                             </table>
@@ -732,71 +760,87 @@
                                 <thead>
                                     <tr>
                                         <th class="sortable-th" @click="idenSortBy('file_name')">
-    <div class="sortable-th-content">
-        <span>{{ t('th_doc_target') }}</span>
-        <div class="sort-arrows">
-            <span class="sort-arrow" :class="{ active: idenSortKey === 'file_name' && idenSortAsc }">▲</span>
-            <span class="sort-arrow" :class="{ active: idenSortKey === 'file_name' && !idenSortAsc }">▼</span>
-        </div>
-    </div>
-</th>
+                                            <div class="sortable-th-content">
+                                                <span>{{ t('th_doc_target') }}</span>
+                                                <div class="sort-arrows">
+                                                    <span class="sort-arrow"
+                                                        :class="{ active: idenSortKey === 'file_name' && idenSortAsc }">▲</span>
+                                                    <span class="sort-arrow"
+                                                        :class="{ active: idenSortKey === 'file_name' && !idenSortAsc }">▼</span>
+                                                </div>
+                                            </div>
+                                        </th>
                                         <th class="sortable-th" @click="idenSortBy('type')">
-    <div class="sortable-th-content">
-        <span>{{ t('th_type') }}</span>
-        <div class="sort-arrows">
-            <span class="sort-arrow" :class="{ active: idenSortKey === 'type' && idenSortAsc }">▲</span>
-            <span class="sort-arrow" :class="{ active: idenSortKey === 'type' && !idenSortAsc }">▼</span>
-        </div>
-    </div>
-</th>
+                                            <div class="sortable-th-content">
+                                                <span>{{ t('th_type') }}</span>
+                                                <div class="sort-arrows">
+                                                    <span class="sort-arrow"
+                                                        :class="{ active: idenSortKey === 'type' && idenSortAsc }">▲</span>
+                                                    <span class="sort-arrow"
+                                                        :class="{ active: idenSortKey === 'type' && !idenSortAsc }">▼</span>
+                                                </div>
+                                            </div>
+                                        </th>
                                         <th class="sortable-th" @click="idenSortBy('parent_id')">
-    <div class="sortable-th-content">
-        <span>{{ t('th_parent_id') }}</span>
-        <div class="sort-arrows">
-            <span class="sort-arrow" :class="{ active: idenSortKey === 'parent_id' && idenSortAsc }">▲</span>
-            <span class="sort-arrow" :class="{ active: idenSortKey === 'parent_id' && !idenSortAsc }">▼</span>
-        </div>
-    </div>
-</th>
+                                            <div class="sortable-th-content">
+                                                <span>{{ t('th_parent_id') }}</span>
+                                                <div class="sort-arrows">
+                                                    <span class="sort-arrow"
+                                                        :class="{ active: idenSortKey === 'parent_id' && idenSortAsc }">▲</span>
+                                                    <span class="sort-arrow"
+                                                        :class="{ active: idenSortKey === 'parent_id' && !idenSortAsc }">▼</span>
+                                                </div>
+                                            </div>
+                                        </th>
                                         <th class="sortable-th" @click="idenSortBy('ROPA_ID')">
-    <div class="sortable-th-content">
-        <span>{{ t('th_mapped_task') }}</span>
-        <div class="sort-arrows">
-            <span class="sort-arrow" :class="{ active: idenSortKey === 'ROPA_ID' && idenSortAsc }">▲</span>
-            <span class="sort-arrow" :class="{ active: idenSortKey === 'ROPA_ID' && !idenSortAsc }">▼</span>
-        </div>
-    </div>
-</th>
+                                            <div class="sortable-th-content">
+                                                <span>{{ t('th_mapped_task') }}</span>
+                                                <div class="sort-arrows">
+                                                    <span class="sort-arrow"
+                                                        :class="{ active: idenSortKey === 'ROPA_ID' && idenSortAsc }">▲</span>
+                                                    <span class="sort-arrow"
+                                                        :class="{ active: idenSortKey === 'ROPA_ID' && !idenSortAsc }">▼</span>
+                                                </div>
+                                            </div>
+                                        </th>
                                         <th class="sortable-th" @click="idenSortBy('Processing_Activity')">
-    <div class="sortable-th-content">
-        <span>{{ t('th_confidence') }}</span>
-        <div class="sort-arrows">
-            <span class="sort-arrow" :class="{ active: idenSortKey === 'Processing_Activity' && idenSortAsc }">▲</span>
-            <span class="sort-arrow" :class="{ active: idenSortKey === 'Processing_Activity' && !idenSortAsc }">▼</span>
-        </div>
-    </div>
-</th>
+                                            <div class="sortable-th-content">
+                                                <span>{{ t('th_confidence') }}</span>
+                                                <div class="sort-arrows">
+                                                    <span class="sort-arrow"
+                                                        :class="{ active: idenSortKey === 'Processing_Activity' && idenSortAsc }">▲</span>
+                                                    <span class="sort-arrow"
+                                                        :class="{ active: idenSortKey === 'Processing_Activity' && !idenSortAsc }">▼</span>
+                                                </div>
+                                            </div>
+                                        </th>
                                         <th class="sortable-th" @click="idenSortBy('description')">
-    <div class="sortable-th-content">
-        <span>{{ t('th_justification') }}</span>
-        <div class="sort-arrows">
-            <span class="sort-arrow" :class="{ active: idenSortKey === 'description' && idenSortAsc }">▲</span>
-            <span class="sort-arrow" :class="{ active: idenSortKey === 'description' && !idenSortAsc }">▼</span>
-        </div>
-    </div>
-</th>
+                                            <div class="sortable-th-content">
+                                                <span>{{ t('th_justification') }}</span>
+                                                <div class="sort-arrows">
+                                                    <span class="sort-arrow"
+                                                        :class="{ active: idenSortKey === 'description' && idenSortAsc }">▲</span>
+                                                    <span class="sort-arrow"
+                                                        :class="{ active: idenSortKey === 'description' && !idenSortAsc }">▼</span>
+                                                </div>
+                                            </div>
+                                        </th>
+                                        <th>{{ t('th_actions') }}</th>
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    <tr v-for="r in sortedIdenData" :key="r.id">
+                                    <tr v-for="r in sortedIdenData" :key="r.mapping_id">
                                         <td>{{ r.File_ID || r.file_name || r.file_id || 'N/A' }}</td>
-                                        <td><span :class="['badge', 'badge-' + (r.type || 'File').toLowerCase()]">{{
-                                                r.type || 'File' }}</span></td>
+                                        <td><span :class="['badge', 'badge-' + (r.type || 'File').toLowerCase()]">{{ r.type || 'File' }}</span></td>
                                         <td>{{ r.parent_id || '-' }}</td>
-                                        <td><span style="font-weight:600; color:var(--primary-color)">{{ r.ROPA_ID ||
-                                                '-' }}</span></td>
+                                        <td><span style="font-weight:600; color:var(--primary-color)">{{ r.ROPA_ID || '-' }}</span></td>
                                         <td>{{ r.Processing_Activity || '-' }}</td>
                                         <td><small>{{ r.description || r.classification || 'N/A' }}</small></td>
+                                        <td>
+                                            <div class="action-btn-group">
+                                                <button class="btn-icon btn-edit" @click="openIdenEditor(r)" :title="currentLang === 'it' ? 'Modifica' : 'Edit'">✏️</button>
+                                            </div>
+                                        </td>
                                     </tr>
                                 </tbody>
                             </table>
@@ -804,6 +848,43 @@
                     </div>
                 </div>
             </section>
+
+            <!-- Modal for Identified Mapping Editing (Teleported to body) -->
+            <Teleport to="body">
+                <div class="modal" v-if="isIdenModalOpen">
+                    <div class="modal-content glass">
+                        <div class="card-header">
+                            <span class="header-icon">🔗</span>
+                            <h3>{{ t('lbl_iden_edit_title') }}</h3>
+                        </div>
+                        <div class="grid-form">
+                            <div class="form-group full-width">
+                                <label>{{ t('th_parent_id') }}</label>
+                                <input type="text" :value="idenEditingRow.parent_id" disabled>
+                            </div>
+                            <div class="form-group full-width">
+                                <label>{{ t('th_confidence') }}</label>
+                                <input type="text" :value="idenEditingRow.activity" disabled>
+                            </div>
+                            <div class="form-group full-width">
+                                <label>{{ t('th_justification') }}</label>
+                                <input type="text" :value="idenEditingRow.description" disabled>
+                            </div>
+                            <div class="form-group full-width">
+                                <label>{{ t('th_mapped_task') }}</label>
+                                <select v-model="idenEditingRow.ropa_id">
+                                    <option v-for="opt in ropaOptions" :key="opt.id" :value="opt.id">{{ opt.label }}</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="modal-actions">
+                            <button class="btn secondary" @click="isIdenModalOpen = false">{{ t('btn_cancel') }}</button>
+                            <button class="btn primary" @click="saveIdenEditor">{{ t('btn_save_context') }}</button>
+                        </div>
+                    </div>
+                </div>
+            </Teleport>
+
 
             <!-- Lifecycle View -->
             <section id="lifecycle-view" class="view"
@@ -823,77 +904,93 @@
                                 <thead>
                                     <tr>
                                         <th class="sortable-th" @click="activeLcSortBy('lifecycle_id')">
-    <div class="sortable-th-content">
-        <span>{{ t('th_lc_id') }}</span>
-        <div class="sort-arrows">
-            <span class="sort-arrow" :class="{ active: activeLcSortKey === 'lifecycle_id' && activeLcSortAsc }">▲</span>
-            <span class="sort-arrow" :class="{ active: activeLcSortKey === 'lifecycle_id' && !activeLcSortAsc }">▼</span>
-        </div>
-    </div>
-</th>
+                                            <div class="sortable-th-content">
+                                                <span>{{ t('th_lc_id') }}</span>
+                                                <div class="sort-arrows">
+                                                    <span class="sort-arrow"
+                                                        :class="{ active: activeLcSortKey === 'lifecycle_id' && activeLcSortAsc }">▲</span>
+                                                    <span class="sort-arrow"
+                                                        :class="{ active: activeLcSortKey === 'lifecycle_id' && !activeLcSortAsc }">▼</span>
+                                                </div>
+                                            </div>
+                                        </th>
                                         <th class="sortable-th" @click="activeLcSortBy('document_id')">
-    <div class="sortable-th-content">
-        <span>{{ t('th_doc_id') }}</span>
-        <div class="sort-arrows">
-            <span class="sort-arrow" :class="{ active: activeLcSortKey === 'document_id' && activeLcSortAsc }">▲</span>
-            <span class="sort-arrow" :class="{ active: activeLcSortKey === 'document_id' && !activeLcSortAsc }">▼</span>
-        </div>
-    </div>
-</th>
+                                            <div class="sortable-th-content">
+                                                <span>{{ t('th_doc_id') }}</span>
+                                                <div class="sort-arrows">
+                                                    <span class="sort-arrow"
+                                                        :class="{ active: activeLcSortKey === 'document_id' && activeLcSortAsc }">▲</span>
+                                                    <span class="sort-arrow"
+                                                        :class="{ active: activeLcSortKey === 'document_id' && !activeLcSortAsc }">▼</span>
+                                                </div>
+                                            </div>
+                                        </th>
                                         <th class="sortable-th" @click="activeLcSortBy('document_type')">
-    <div class="sortable-th-content">
-        <span>{{ t('th_lc_type') }}</span>
-        <div class="sort-arrows">
-            <span class="sort-arrow" :class="{ active: activeLcSortKey === 'document_type' && activeLcSortAsc }">▲</span>
-            <span class="sort-arrow" :class="{ active: activeLcSortKey === 'document_type' && !activeLcSortAsc }">▼</span>
-        </div>
-    </div>
-</th>
+                                            <div class="sortable-th-content">
+                                                <span>{{ t('th_lc_type') }}</span>
+                                                <div class="sort-arrows">
+                                                    <span class="sort-arrow"
+                                                        :class="{ active: activeLcSortKey === 'document_type' && activeLcSortAsc }">▲</span>
+                                                    <span class="sort-arrow"
+                                                        :class="{ active: activeLcSortKey === 'document_type' && !activeLcSortAsc }">▼</span>
+                                                </div>
+                                            </div>
+                                        </th>
                                         <th class="sortable-th" @click="activeLcSortBy('classification')">
-    <div class="sortable-th-content">
-        <span>{{ t('th_classification') }}</span>
-        <div class="sort-arrows">
-            <span class="sort-arrow" :class="{ active: activeLcSortKey === 'classification' && activeLcSortAsc }">▲</span>
-            <span class="sort-arrow" :class="{ active: activeLcSortKey === 'classification' && !activeLcSortAsc }">▼</span>
-        </div>
-    </div>
-</th>
+                                            <div class="sortable-th-content">
+                                                <span>{{ t('th_classification') }}</span>
+                                                <div class="sort-arrows">
+                                                    <span class="sort-arrow"
+                                                        :class="{ active: activeLcSortKey === 'classification' && activeLcSortAsc }">▲</span>
+                                                    <span class="sort-arrow"
+                                                        :class="{ active: activeLcSortKey === 'classification' && !activeLcSortAsc }">▼</span>
+                                                </div>
+                                            </div>
+                                        </th>
                                         <th class="sortable-th" @click="activeLcSortBy('creation_date')">
-    <div class="sortable-th-content">
-        <span>{{ t('th_creation') }}</span>
-        <div class="sort-arrows">
-            <span class="sort-arrow" :class="{ active: activeLcSortKey === 'creation_date' && activeLcSortAsc }">▲</span>
-            <span class="sort-arrow" :class="{ active: activeLcSortKey === 'creation_date' && !activeLcSortAsc }">▼</span>
-        </div>
-    </div>
-</th>
+                                            <div class="sortable-th-content">
+                                                <span>{{ t('th_creation') }}</span>
+                                                <div class="sort-arrows">
+                                                    <span class="sort-arrow"
+                                                        :class="{ active: activeLcSortKey === 'creation_date' && activeLcSortAsc }">▲</span>
+                                                    <span class="sort-arrow"
+                                                        :class="{ active: activeLcSortKey === 'creation_date' && !activeLcSortAsc }">▼</span>
+                                                </div>
+                                            </div>
+                                        </th>
                                         <th class="sortable-th" @click="activeLcSortBy('scheduled_deletion_date')">
-    <div class="sortable-th-content">
-        <span>{{ t('th_scheduled') }}</span>
-        <div class="sort-arrows">
-            <span class="sort-arrow" :class="{ active: activeLcSortKey === 'scheduled_deletion_date' && activeLcSortAsc }">▲</span>
-            <span class="sort-arrow" :class="{ active: activeLcSortKey === 'scheduled_deletion_date' && !activeLcSortAsc }">▼</span>
-        </div>
-    </div>
-</th>
+                                            <div class="sortable-th-content">
+                                                <span>{{ t('th_scheduled') }}</span>
+                                                <div class="sort-arrows">
+                                                    <span class="sort-arrow"
+                                                        :class="{ active: activeLcSortKey === 'scheduled_deletion_date' && activeLcSortAsc }">▲</span>
+                                                    <span class="sort-arrow"
+                                                        :class="{ active: activeLcSortKey === 'scheduled_deletion_date' && !activeLcSortAsc }">▼</span>
+                                                </div>
+                                            </div>
+                                        </th>
                                         <th class="sortable-th" @click="activeLcSortBy('status')">
-    <div class="sortable-th-content">
-        <span>{{ t('th_status') }}</span>
-        <div class="sort-arrows">
-            <span class="sort-arrow" :class="{ active: activeLcSortKey === 'status' && activeLcSortAsc }">▲</span>
-            <span class="sort-arrow" :class="{ active: activeLcSortKey === 'status' && !activeLcSortAsc }">▼</span>
-        </div>
-    </div>
-</th>
+                                            <div class="sortable-th-content">
+                                                <span>{{ t('th_status') }}</span>
+                                                <div class="sort-arrows">
+                                                    <span class="sort-arrow"
+                                                        :class="{ active: activeLcSortKey === 'status' && activeLcSortAsc }">▲</span>
+                                                    <span class="sort-arrow"
+                                                        :class="{ active: activeLcSortKey === 'status' && !activeLcSortAsc }">▼</span>
+                                                </div>
+                                            </div>
+                                        </th>
                                         <th class="sortable-th" @click="activeLcSortBy('notes')">
-    <div class="sortable-th-content">
-        <span>{{ t('th_notes') }}</span>
-        <div class="sort-arrows">
-            <span class="sort-arrow" :class="{ active: activeLcSortKey === 'notes' && activeLcSortAsc }">▲</span>
-            <span class="sort-arrow" :class="{ active: activeLcSortKey === 'notes' && !activeLcSortAsc }">▼</span>
-        </div>
-    </div>
-</th>
+                                            <div class="sortable-th-content">
+                                                <span>{{ t('th_notes') }}</span>
+                                                <div class="sort-arrows">
+                                                    <span class="sort-arrow"
+                                                        :class="{ active: activeLcSortKey === 'notes' && activeLcSortAsc }">▲</span>
+                                                    <span class="sort-arrow"
+                                                        :class="{ active: activeLcSortKey === 'notes' && !activeLcSortAsc }">▼</span>
+                                                </div>
+                                            </div>
+                                        </th>
                                         <th>{{ t('th_actions') }}</th>
                                     </tr>
                                 </thead>
@@ -902,8 +999,7 @@
                                         <td>{{ row.lifecycle_id }}</td>
                                         <td>{{ row.document_id || '-' }}</td>
                                         <td><span
-                                                :class="['badge', 'badge-' + (row.document_type || 'File').toLowerCase()]">{{
-                                                row.document_type || 'File' }}</span></td>
+                                                :class="['badge', 'badge-' + (row.document_type || 'File').toLowerCase()]">{{ row.document_type || 'File' }}</span></td>
                                         <td>{{ row.classification || 'Unknown' }}</td>
                                         <td>{{ formatDate(row.creation_date) }}</td>
                                         <td>{{ formatDate(row.scheduled_deletion_date) }}</td>
@@ -934,7 +1030,8 @@
                                     </div>
                                     <div class="grid-form">
                                         <div class="form-group full-width">
-                                            <p style="font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 12px;">
+                                            <p
+                                                style="font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 12px;">
                                                 Created on {{ lcEditingRow.creation_date }} • ID: {{ lcEditingRow.id }}
                                             </p>
                                         </div>
@@ -950,13 +1047,14 @@
                                         </div>
                                         <div class="form-group full-width">
                                             <label>{{ t('lbl_lc_notes') }}</label>
-                                            <textarea rows="4" v-model="lcEditingRow.notes" 
+                                            <textarea rows="4" v-model="lcEditingRow.notes"
                                                 :placeholder="currentLang === 'it' ? 'Aggiungi note amministrative...' : 'Add administrative notes...'"></textarea>
                                         </div>
                                     </div>
                                     <div class="modal-actions">
                                         <button class="btn secondary" @click="isLcModalOpen = false">{{ t('btn_cancel') }}</button>
-                                        <button class="btn btn-danger-action" @click="deleteLcNow">🗑️ DELETE NOW</button>
+                                        <button class="btn btn-danger-action" @click="deleteLcNow">🗑️ DELETE
+                                            NOW</button>
                                         <button class="btn primary" @click="saveLcEditor">{{ t('btn_save_context') }}</button>
                                     </div>
                                 </div>
@@ -972,22 +1070,18 @@
                                 <span class="dot yellow"></span>
                                 <span class="dot green"></span>
                             </div>
-                            <span class="terminal-title">{{ currentLang === 'it' ? 'LOG OPERAZIONI' : 'OPERATIONS LOG'
-                                }}</span>
+                            <span class="terminal-title">{{ currentLang === 'it' ? 'LOG OPERAZIONI' : 'OPERATIONS LOG' }}</span>
                             <div class="terminal-toggle-icon">
                                 <span v-if="isJanitorLogCollapsed">▼ Expand</span>
                                 <span v-else>▲ Collapse</span>
                             </div>
                         </div>
-                        <div class="terminal-body" v-show="!isJanitorLogCollapsed">{{ janitorLog || (currentLang ===
-                            'it' ? 'Nessuna operazione registrata.' : 'No operations logged yet.') }}</div>
+                        <div class="terminal-body" v-show="!isJanitorLogCollapsed">{{ janitorLog || (currentLang === 'it' ? 'Nessuna operazione registrata.' : 'No operations logged yet.') }}</div>
                     </div>
 
                     <div class="card glass mb-large" style="margin-top: 24px;">
-                        <div class="header-actions"
-                            style="margin-bottom: 1rem; display: flex; align-items: center; gap: 1rem;">
-                            <h3 style="margin: 0;">{{ currentLang === 'it' ? 'Record Eliminati' : 'Deleted Records' }}
-                            </h3>
+                        <div class="card-header-flex">
+                            <h3>{{ currentLang === 'it' ? 'Record Eliminati' : 'Deleted Records' }}</h3>
                             <button class="btn secondary" style="display: flex; gap: 8px; align-items: center;"
                                 @click="exportDeletedPdf">📄 Audit Export</button>
                         </div>
@@ -996,59 +1090,71 @@
                                 <thead>
                                     <tr>
                                         <th class="sortable-th" @click="deletedLcSortBy('lifecycle_id')">
-    <div class="sortable-th-content">
-        <span>{{ t('th_lc_id') }}</span>
-        <div class="sort-arrows">
-            <span class="sort-arrow" :class="{ active: deletedLcSortKey === 'lifecycle_id' && deletedLcSortAsc }">▲</span>
-            <span class="sort-arrow" :class="{ active: deletedLcSortKey === 'lifecycle_id' && !deletedLcSortAsc }">▼</span>
-        </div>
-    </div>
-</th>
+                                            <div class="sortable-th-content">
+                                                <span>{{ t('th_lc_id') }}</span>
+                                                <div class="sort-arrows">
+                                                    <span class="sort-arrow"
+                                                        :class="{ active: deletedLcSortKey === 'lifecycle_id' && deletedLcSortAsc }">▲</span>
+                                                    <span class="sort-arrow"
+                                                        :class="{ active: deletedLcSortKey === 'lifecycle_id' && !deletedLcSortAsc }">▼</span>
+                                                </div>
+                                            </div>
+                                        </th>
                                         <th class="sortable-th" @click="deletedLcSortBy('document_id')">
-    <div class="sortable-th-content">
-        <span>{{ t('th_doc_id') }}</span>
-        <div class="sort-arrows">
-            <span class="sort-arrow" :class="{ active: deletedLcSortKey === 'document_id' && deletedLcSortAsc }">▲</span>
-            <span class="sort-arrow" :class="{ active: deletedLcSortKey === 'document_id' && !deletedLcSortAsc }">▼</span>
-        </div>
-    </div>
-</th>
+                                            <div class="sortable-th-content">
+                                                <span>{{ t('th_doc_id') }}</span>
+                                                <div class="sort-arrows">
+                                                    <span class="sort-arrow"
+                                                        :class="{ active: deletedLcSortKey === 'document_id' && deletedLcSortAsc }">▲</span>
+                                                    <span class="sort-arrow"
+                                                        :class="{ active: deletedLcSortKey === 'document_id' && !deletedLcSortAsc }">▼</span>
+                                                </div>
+                                            </div>
+                                        </th>
                                         <th class="sortable-th" @click="deletedLcSortBy('document_type')">
-    <div class="sortable-th-content">
-        <span>{{ 'Doc Type' }}</span>
-        <div class="sort-arrows">
-            <span class="sort-arrow" :class="{ active: deletedLcSortKey === 'document_type' && deletedLcSortAsc }">▲</span>
-            <span class="sort-arrow" :class="{ active: deletedLcSortKey === 'document_type' && !deletedLcSortAsc }">▼</span>
-        </div>
-    </div>
-</th>
+                                            <div class="sortable-th-content">
+                                                <span>{{ 'Doc Type' }}</span>
+                                                <div class="sort-arrows">
+                                                    <span class="sort-arrow"
+                                                        :class="{ active: deletedLcSortKey === 'document_type' && deletedLcSortAsc }">▲</span>
+                                                    <span class="sort-arrow"
+                                                        :class="{ active: deletedLcSortKey === 'document_type' && !deletedLcSortAsc }">▼</span>
+                                                </div>
+                                            </div>
+                                        </th>
                                         <th class="sortable-th" @click="deletedLcSortBy('creation_date')">
-    <div class="sortable-th-content">
-        <span>{{ currentLang === 'it' ? 'Data di Creazione' : 'Creation Date' }}</span>
-        <div class="sort-arrows">
-            <span class="sort-arrow" :class="{ active: deletedLcSortKey === 'creation_date' && deletedLcSortAsc }">▲</span>
-            <span class="sort-arrow" :class="{ active: deletedLcSortKey === 'creation_date' && !deletedLcSortAsc }">▼</span>
-        </div>
-    </div>
-</th>
+                                            <div class="sortable-th-content">
+                                                <span>{{ currentLang === 'it' ? 'Data di Creazione' : 'Creation Date' }}</span>
+                                                <div class="sort-arrows">
+                                                    <span class="sort-arrow"
+                                                        :class="{ active: deletedLcSortKey === 'creation_date' && deletedLcSortAsc }">▲</span>
+                                                    <span class="sort-arrow"
+                                                        :class="{ active: deletedLcSortKey === 'creation_date' && !deletedLcSortAsc }">▼</span>
+                                                </div>
+                                            </div>
+                                        </th>
                                         <th class="sortable-th" @click="deletedLcSortBy('scheduled_deletion_date')">
-    <div class="sortable-th-content">
-        <span>{{ currentLang === 'it' ? 'Data di cancellazione' : 'Deletion Date' }}</span>
-        <div class="sort-arrows">
-            <span class="sort-arrow" :class="{ active: deletedLcSortKey === 'scheduled_deletion_date' && deletedLcSortAsc }">▲</span>
-            <span class="sort-arrow" :class="{ active: deletedLcSortKey === 'scheduled_deletion_date' && !deletedLcSortAsc }">▼</span>
-        </div>
-    </div>
-</th>
+                                            <div class="sortable-th-content">
+                                                <span>{{ currentLang === 'it' ? 'Data di cancellazione' : 'Deletion Date' }}</span>
+                                                <div class="sort-arrows">
+                                                    <span class="sort-arrow"
+                                                        :class="{ active: deletedLcSortKey === 'scheduled_deletion_date' && deletedLcSortAsc }">▲</span>
+                                                    <span class="sort-arrow"
+                                                        :class="{ active: deletedLcSortKey === 'scheduled_deletion_date' && !deletedLcSortAsc }">▼</span>
+                                                </div>
+                                            </div>
+                                        </th>
                                         <th class="sortable-th" @click="deletedLcSortBy('status')">
-    <div class="sortable-th-content">
-        <span>{{ t('th_status') }}</span>
-        <div class="sort-arrows">
-            <span class="sort-arrow" :class="{ active: deletedLcSortKey === 'status' && deletedLcSortAsc }">▲</span>
-            <span class="sort-arrow" :class="{ active: deletedLcSortKey === 'status' && !deletedLcSortAsc }">▼</span>
-        </div>
-    </div>
-</th>
+                                            <div class="sortable-th-content">
+                                                <span>{{ t('th_status') }}</span>
+                                                <div class="sort-arrows">
+                                                    <span class="sort-arrow"
+                                                        :class="{ active: deletedLcSortKey === 'status' && deletedLcSortAsc }">▲</span>
+                                                    <span class="sort-arrow"
+                                                        :class="{ active: deletedLcSortKey === 'status' && !deletedLcSortAsc }">▼</span>
+                                                </div>
+                                            </div>
+                                        </th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -1056,13 +1162,11 @@
                                         <td>{{ row.lifecycle_id }}</td>
                                         <td>{{ row.document_id || '-' }}</td>
                                         <td><span
-                                                :class="['badge', 'badge-' + (row.document_type || 'File').toLowerCase()]">{{
-                                                row.document_type || 'File' }}</span></td>
+                                                :class="['badge', 'badge-' + (row.document_type || 'File').toLowerCase()]">{{ row.document_type || 'File' }}</span></td>
                                         <td>{{ formatDate(row.creation_date) }}</td>
                                         <td>{{ formatDate(row.scheduled_deletion_date) }}</td>
                                         <td><span class="badge"
-                                                style="background: rgba(255,59,48,0.1); color: #ff3b30;">{{ row.status
-                                                }}</span></td>
+                                                style="background: rgba(255,59,48,0.1); color: #ff3b30;">{{ row.status }}</span></td>
                                     </tr>
                                 </tbody>
                             </table>
@@ -1079,7 +1183,7 @@
         </main>
     </div>
 
-    <script src="app.js?v=2011"></script>
+    <script src="app.js?v=2013"></script>
 </body>
 
 </html>

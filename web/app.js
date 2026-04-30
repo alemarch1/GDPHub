@@ -48,7 +48,7 @@ const app = createApp({
 
         const loadTranslations = async () => {
             try {
-                const res = await fetch('/locales/' + currentLang.value + '.json');
+                const res = await fetch('/locales/' + currentLang.value + '.json?v=2012');
                 translations.value = await res.json();
             } catch (err) {
                 console.error("Failed to load translations:", err);
@@ -282,8 +282,8 @@ const app = createApp({
         const models = ref([]);
         const classifyModel = ref('');
         const identifyModel = ref('');
-        const classifyNoThink = ref(false);
-        const identifyNoThink = ref(false);
+        const classifyNoThink = ref(true);
+        const identifyNoThink = ref(true);
 
         const loadModels = async () => {
             try {
@@ -521,6 +521,7 @@ const app = createApp({
         // Dashboard
         const docsData = ref([]);
         const idenData = ref([]);
+        const pendingCount = ref(0);
         const { sortKey: docsSortKey, sortAsc: docsSortAsc, sortBy: docsSortBy, sortedData: sortedDocsData } = useSortableTable(docsData);
         const { sortKey: idenSortKey, sortAsc: idenSortAsc, sortBy: idenSortBy, sortedData: sortedIdenData } = useSortableTable(idenData);
         const loadDashboardData = async () => {
@@ -529,7 +530,44 @@ const app = createApp({
                 docsData.value = (await dRes.json()).data || [];
                 const iRes = await fetch('/api/identified');
                 idenData.value = (await iRes.json()).data || [];
+                loadPendingCount();
             } catch(e) {}
+        };
+
+        const loadPendingCount = async () => {
+            try {
+                const res = await fetch('/api/stats/pending');
+                const data = await res.json();
+                pendingCount.value = data.count || 0;
+            } catch(e) { pendingCount.value = 0; }
+        };
+
+        // Identified Mapping Editor
+        const isIdenModalOpen = ref(false);
+        const idenEditingRow = reactive({ mapping_id: null, parent_id: '', activity: '', description: '', ropa_id: '' });
+        const ropaOptions = computed(() => {
+            return ropaDataCache.value.map(r => ({ id: r.id || r['id'], label: (r.id || r['id']) + ' — ' + (r['Processing Activity'] || r.activity || '') }));
+        });
+
+        const openIdenEditor = (row) => {
+            idenEditingRow.mapping_id = row.mapping_id;
+            idenEditingRow.parent_id = row.parent_id || '-';
+            idenEditingRow.activity = row.Processing_Activity || '-';
+            idenEditingRow.description = row.description || row.classification || '-';
+            idenEditingRow.ropa_id = row.ROPA_ID || '';
+            isIdenModalOpen.value = true;
+        };
+
+        const saveIdenEditor = async () => {
+            if (!idenEditingRow.mapping_id) return;
+            try {
+                await fetch('/api/identified/' + idenEditingRow.mapping_id, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ropa_id: idenEditingRow.ropa_id || null })
+                });
+                showToast(currentLang.value === 'it' ? 'Associazione aggiornata!' : 'Mapping updated!');
+                isIdenModalOpen.value = false;
+                loadDashboardData();
+            } catch(e) { showToast('Error saving mapping'); }
         };
 
         // Lifecycle
@@ -743,7 +781,7 @@ const app = createApp({
         
         watch(currentView, (newVal) => {
             if(newVal === 'ropa-view') loadRopaData();
-            if(newVal === 'dashboard-view') loadDashboardData();
+            if(newVal === 'dashboard-view') { loadDashboardData(); loadRopaData(); }
             if(newVal === 'lifecycle-view') loadLifecycleData();
         });
 
@@ -755,7 +793,7 @@ const app = createApp({
             config, currentLang, t, currentView, viewTitle, setView, isSidebarOpen, handleBrowse, saveConfiguration, saveInputFolder, toasts,
             processState, canStop, canPause, canResume, stopProcess, pauseProcess, resumeProcess, terminalOutput, terminalScrollRef, showPipelineProgress, pipelineProgressPercent, pipelineElapsedTime, pipelineRemainingTime, isTerminalCollapsed, scriptStatuses, models, classifyModel, identifyModel, classifyNoThink, identifyNoThink, executeScript,
             ropaDataCache, sortedRopaData, ropaSortKey, ropaSortAsc, ropaSortBy, isRopaModalOpen, isBasesDropdownOpen, toggleBasesDropdown, ropaEditingRow, openRopaEditor, saveRopaEditor, ropaFileInput, uploadRopa, selectedFileName, onFileSelected, translateBases,
-            docsData, sortedDocsData, docsSortKey, docsSortAsc, docsSortBy, idenData, sortedIdenData, idenSortKey, idenSortAsc, idenSortBy,
+            docsData, sortedDocsData, docsSortKey, docsSortAsc, docsSortBy, idenData, sortedIdenData, idenSortKey, idenSortAsc, idenSortBy, isIdenModalOpen, idenEditingRow, openIdenEditor, saveIdenEditor, ropaOptions, pendingCount, loadPendingCount,
             lcData, activeLcData, deletedLcData, sortedActiveLcData, activeLcSortKey, activeLcSortAsc, activeLcSortBy, sortedDeletedLcData, deletedLcSortKey, deletedLcSortAsc, deletedLcSortBy, isLcModalOpen, lcEditingRow, openLcEditor, saveLcEditor, deleteLcNow, deleteLcDirect, formatDate, runningJanitor, runJanitor, janitorLog, isJanitorLogCollapsed, exportDeletedPdf, lawfulBasesOptions
         };
     }

@@ -18,7 +18,7 @@ import ollama
 import psutil
 
 from database import get_session, create_db_and_tables
-from models import Document, DocumentClassification, RopaRecord, DocumentRopaMapping
+from models import Document, DocumentClassification, RopaRecord, DocumentRopaMapping, ProcessedEmail
 from sqlmodel import select, delete
 from config_manager import get_config, set_config, Configuration
 from deletion_service import execute_deletion_workflow
@@ -541,6 +541,49 @@ async def get_docs():
     except Exception as e:
          return {"data": []}
 
+@app.get("/api/stats/pending")
+async def get_pending_stats():
+    """Counts files and emails that are not yet anonymized."""
+    try:
+        with get_session() as session:
+            # Get existing anonymized filenames and email parent IDs
+            existing_filenames = set(session.exec(select(Document.file_name)).all())
+            existing_parent_ids = set(session.exec(select(Document.parent_id)).all())
+            
+            # 1. Count files in input folder not yet in Document table
+            input_folder = get_config("input_folder", "data/input")
+            input_path = (PROJECT_ROOT / input_folder).resolve()
+            
+            # Supported extensions (from Step 1 map)
+            supported_exts = {'.pdf', '.docx', '.doc', '.odt', '.rtf', '.xml', '.json', '.html', '.htm', '.csv', '.xls', '.md', '.txt'}
+            
+            pending_files_in_folder = set()
+            if input_path.exists() and input_path.is_dir():
+                for f in input_path.glob("**/*"):
+                    if f.is_file() and f.suffix.lower() in supported_exts:
+                        if f.name not in existing_filenames:
+                            pending_files_in_folder.add(f.name)
+            else:
+                import logging
+                logging.warning(f"PendingStats: input_path does not exist or is not a dir: {input_path}")
+            
+            # 2. Check ProcessedEmail table vs Document table
+            processed_email_ids = set(session.exec(select(ProcessedEmail.id)).all())
+            pending_email_ids = processed_email_ids - existing_parent_ids
+            
+            total_pending = len(pending_files_in_folder)
+            for eid in pending_email_ids:
+                prefix = f"email_{eid}_"
+                has_files_in_pending = any(fname.startswith(prefix) for fname in pending_files_in_folder)
+                if not has_files_in_pending:
+                    total_pending += 1
+            
+            return {"count": total_pending}
+    except Exception as e:
+        import logging
+        logging.error(f"Error in get_pending_stats: {str(e)}")
+        return {"count": 0}
+
 @app.get("/api/identified")
 async def get_identified():
     """Returns all document-to-ROPA mappings with associated metadata."""
@@ -566,6 +609,7 @@ async def get_identified():
                     last_desc = c.description_short
                 
                 records.append({
+                    "mapping_id": m.id,
                     "ROPA_ID": m.ropa_id,
                     "Processing_Activity": ropa_act,
                     "File_ID": doc.id,
@@ -577,6 +621,25 @@ async def get_identified():
             return {"data": records}
     except Exception as e:
         return {"data": []}
+
+@app.post("/api/identified/{mapping_id}")
+async def update_identified_mapping(mapping_id: int, request: Request):
+    """Updates the ROPA assignment for a specific document-ROPA mapping."""
+    try:
+        data = await request.json()
+        new_ropa_id = data.get("ropa_id")
+        with get_session() as session:
+            mapping = session.get(DocumentRopaMapping, mapping_id)
+            if not mapping:
+                raise HTTPException(status_code=404, detail="Mapping not found")
+            mapping.ropa_id = new_ropa_id if new_ropa_id else None
+            session.add(mapping)
+            session.commit()
+        return {"status": "success"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="An internal server error occurred")
 
 # --- LIFECYCLE AND JANITOR ENDPOINTS ---
 @app.get("/api/lifecycle")

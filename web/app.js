@@ -85,7 +85,8 @@ const app = createApp({
             log_level: 'INFO',
             mail: { client_id: '', client_secret: '', query: '', max_emails: 50, import_override_days: 0, delete_after_processing: false, import_override_ignore_processed: false },
             ext: { tesseract_path: '', max_workers: 12 },
-            cls: { ollama_url: 'http://localhost:11434', ollama_model_default: '', title_max_length: 500, text_max_length: 1500, timeout_seconds: 30, api_request_timeout: 25, options: { temperature: 0.2, num_ctx: 4096, top_p: 0.9, top_k: 40, num_predict: 64 } },
+            gpu_profile: '12gb',
+            cls: { ollama_url: 'http://localhost:11434', ollama_model_default: '', title_max_length: 500, text_max_length: 1500, timeout_seconds: 30, api_request_timeout: 25, options: { temperature: 0.2, num_ctx: 2048, num_batch: 256, top_p: 0.9, top_k: 40, num_predict: 64 } },
             ropa: { ropa_folder: '' },
             outlook: { client_id: '', tenant_id: 'common', query_filter: 'isRead eq false', max_emails: 50, import_override_days: 0, delete_after_processing: false, import_override_ignore_processed: false }
         });
@@ -131,10 +132,12 @@ const app = createApp({
                 config.cls.text_max_length = cls.text_max_length || 1500;
                 config.cls.timeout_seconds = cls.timeout_seconds || 30;
                 config.cls.api_request_timeout = cls.api_request_timeout || 25;
+                config.gpu_profile = data['gpu_profile'] || 'custom';
                 const opts = cls.ollama_options || {};
                 config.cls.options.num_predict = opts.num_predict || 64;
                 config.cls.options.temperature = opts.temperature || 0.2;
-                config.cls.options.num_ctx = opts.num_ctx || 4096;
+                config.cls.options.num_ctx = opts.num_ctx || 2048;
+                config.cls.options.num_batch = opts.num_batch || 256;
                 config.cls.options.top_p = opts.top_p || 0.9;
                 config.cls.options.top_k = opts.top_k || 40;
 
@@ -161,6 +164,7 @@ const app = createApp({
                 database_folder: config.database_folder,
                 log_folder: config.log_folder,
                 log_level: config.log_level,
+                gpu_profile: config.gpu_profile,
                 "0_extract_mail_gmail_auth": { client_id: config.mail.client_id, client_secret: config.mail.client_secret },
                 "0_extract_mail.py": { 
                     query: config.mail.query, 
@@ -193,6 +197,17 @@ const app = createApp({
             } catch(e) {
                 showToast("Failed to save config.");
             }
+        };
+
+        const GPU_PROFILES = {
+            "8gb":  { num_predict: 64, temperature: 0.2, num_ctx: 1536, num_batch: 128, top_p: 0.9, top_k: 40 },
+            "12gb": { num_predict: 64, temperature: 0.2, num_ctx: 2048, num_batch: 256, top_p: 0.9, top_k: 40 },
+            "24gb": { num_predict: 64, temperature: 0.2, num_ctx: 4096, num_batch: 512, top_p: 0.9, top_k: 40 },
+        };
+
+        const applyGpuProfile = (profileName) => {
+            const p = GPU_PROFILES[profileName];
+            if (p) Object.assign(config.cls.options, p);
         };
 
         const saveInputFolder = async () => {
@@ -307,6 +322,9 @@ const app = createApp({
                 if (scriptName.includes("identify_ROPA")) {
                     args.push("--model", identifyModel.value);
                     if (identifyNoThink.value) args.push("--no-think");
+                }
+                if (config.gpu_profile && config.gpu_profile !== 'custom') {
+                    args.push("--gpu-profile", config.gpu_profile);
                 }
             }
             terminalOutput.value = `>>> Launching ${scriptName}...\n`;
@@ -790,7 +808,7 @@ const app = createApp({
         });
 
         return {
-            config, currentLang, t, currentView, viewTitle, setView, isSidebarOpen, handleBrowse, saveConfiguration, saveInputFolder, toasts,
+            config, currentLang, t, currentView, viewTitle, setView, isSidebarOpen, handleBrowse, saveConfiguration, saveInputFolder, applyGpuProfile, toasts,
             processState, canStop, canPause, canResume, stopProcess, pauseProcess, resumeProcess, terminalOutput, terminalScrollRef, showPipelineProgress, pipelineProgressPercent, pipelineElapsedTime, pipelineRemainingTime, isTerminalCollapsed, scriptStatuses, models, classifyModel, identifyModel, classifyNoThink, identifyNoThink, executeScript,
             ropaDataCache, sortedRopaData, ropaSortKey, ropaSortAsc, ropaSortBy, isRopaModalOpen, isBasesDropdownOpen, toggleBasesDropdown, ropaEditingRow, openRopaEditor, saveRopaEditor, ropaFileInput, uploadRopa, selectedFileName, onFileSelected, translateBases,
             docsData, sortedDocsData, docsSortKey, docsSortAsc, docsSortBy, idenData, sortedIdenData, idenSortKey, idenSortAsc, idenSortBy, isIdenModalOpen, idenEditingRow, openIdenEditor, saveIdenEditor, ropaOptions, pendingCount, loadPendingCount,

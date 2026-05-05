@@ -41,9 +41,17 @@ OLLAMA_URL = classify_config.get('ollama_url', 'http://localhost:11434')
 OLLAMA_OPTIONS = classify_config.get('ollama_options', {})
 OLLAMA_MODEL_DEFAULT = classify_config.get('ollama_model_default', 'mistral:latest')
 
-# Ensure num_ctx is always set (default 4096)
+# Ensure num_ctx is always set (default 2048)
 if 'num_ctx' not in OLLAMA_OPTIONS:
-    OLLAMA_OPTIONS['num_ctx'] = 4096
+    OLLAMA_OPTIONS['num_ctx'] = 2048
+
+# Apply GPU profile override from CLI
+if CLI_ARGS.gpu_profile:
+    _gpu_profiles = get_config('gpu_profiles', {})
+    _profile = _gpu_profiles.get(CLI_ARGS.gpu_profile)
+    if _profile:
+        OLLAMA_OPTIONS = _profile.copy()
+        logging.info(f"Applied GPU profile '{CLI_ARGS.gpu_profile}': {OLLAMA_OPTIONS}")
 
 TITLE_MAX_LENGTH = classify_config.get('title_max_length', 500)
 TEXT_MAX_LENGTH = classify_config.get('text_max_length', 1500)
@@ -94,6 +102,8 @@ def parse_arguments():
     parser.add_argument("--run-all", action="store_true", help="Process entire JSON without prompting")
     parser.add_argument("--file-id", type=str, help="Specific file_id to process", default=None)
     parser.add_argument("--no-think", action="store_true", help="Disable model thinking/chain-of-thought")
+    parser.add_argument("--gpu-profile", type=str, choices=["8gb", "12gb", "24gb"],
+                        help="GPU VRAM preset (overrides ollama_options)", default=None)
     args, _ = parser.parse_known_args()
     return args
 

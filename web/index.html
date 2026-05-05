@@ -248,6 +248,16 @@
                                             :title="currentLang === 'it' ? 'Aggiorna Modelli' : 'Refresh Models'">🔄</button>
                                     </div>
                                 </div>
+                                <div class="form-group full-width">
+                                    <label for="gpu-profile">{{ t('cfg_gpu_profile') }}</label>
+                                    <select id="gpu-profile" v-model="config.gpu_profile"
+                                        @change="applyGpuProfile(config.gpu_profile)">
+                                        <option value="8gb">8 GB VRAM (RTX 3060 8GB / 4060)</option>
+                                        <option value="12gb">12 GB VRAM (RTX 3060 12GB) — Default</option>
+                                        <option value="24gb">24 GB VRAM (RTX 3090 / 4090)</option>
+                                        <option value="custom">Custom</option>
+                                    </select>
+                                </div>
                                 <div class="form-row-grid">
                                     <div class="form-group">
                                         <label for="cls-num-predict">{{ t('cfg_num_predict') }}</label>
@@ -262,6 +272,10 @@
                                     <div class="form-group">
                                         <label for="cls-num-ctx">{{ t('cfg_num_ctx') }}</label>
                                         <input type="number" id="cls-num-ctx" v-model="config.cls.options.num_ctx">
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="cls-num-batch">{{ t('cfg_num_batch') }}</label>
+                                        <input type="number" id="cls-num-batch" v-model="config.cls.options.num_batch">
                                     </div>
                                 </div>
                             </div>

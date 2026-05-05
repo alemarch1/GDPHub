@@ -43,6 +43,33 @@ def _seed_defaults():
                 "database_folder": "./data/output",
                 "log_folder": "./logs",
                 "log_level": "INFO",
+                "gpu_profile": "12gb",
+                "gpu_profiles": {
+                    "8gb": {
+                        "num_predict": 64,
+                        "temperature": 0.2,
+                        "num_ctx": 1536,
+                        "num_batch": 128,
+                        "top_p": 0.9,
+                        "top_k": 40
+                    },
+                    "12gb": {
+                        "num_predict": 64,
+                        "temperature": 0.2,
+                        "num_ctx": 2048,
+                        "num_batch": 256,
+                        "top_p": 0.9,
+                        "top_k": 40
+                    },
+                    "24gb": {
+                        "num_predict": 64,
+                        "temperature": 0.2,
+                        "num_ctx": 4096,
+                        "num_batch": 512,
+                        "top_p": 0.9,
+                        "top_k": 40
+                    }
+                },
                 "0_extract_mail.py": {
                     "query": "",
                     "max_emails": 50,
@@ -64,7 +91,8 @@ def _seed_defaults():
                     "ollama_options": {
                         "num_predict": 64,
                         "temperature": 0.2,
-                        "num_ctx": 4096,
+                        "num_ctx": 2048,
+                        "num_batch": 256,
                         "top_p": 0.9,
                         "top_k": 40
                     }
@@ -116,6 +144,17 @@ def _seed_defaults():
             session.add_all(example_ropa)
             session.commit()
             print("[GDPHub] Example ROPA records seeded into database.")
+
+        # --- Migrate: add gpu_profile keys to existing databases ---
+        for new_key, new_val in [("gpu_profile", "12gb"), ("gpu_profiles", {
+            "8gb":  {"num_predict": 64, "temperature": 0.2, "num_ctx": 1536, "num_batch": 128, "top_p": 0.9, "top_k": 40},
+            "12gb": {"num_predict": 64, "temperature": 0.2, "num_ctx": 2048, "num_batch": 256, "top_p": 0.9, "top_k": 40},
+            "24gb": {"num_predict": 64, "temperature": 0.2, "num_ctx": 4096, "num_batch": 512, "top_p": 0.9, "top_k": 40},
+        })]:
+            existing = session.exec(select(Configuration).where(Configuration.key == new_key)).first()
+            if existing is None:
+                session.add(Configuration(key=new_key, value=json.dumps(new_val)))
+        session.commit()
 
 _seed_defaults()
 

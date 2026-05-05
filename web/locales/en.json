@@ -25,6 +25,8 @@
   "cfg_mail_download_folder": "Mail Stage Folder",
   "cfg_max_emails": "Emails Limit",
   "cfg_max_threads": "Parallel Processing Threads",
+  "cfg_gpu_profile": "GPU VRAM Profile",
+  "cfg_num_batch": "Batch Size (num_batch)",
   "cfg_num_ctx": "Context Window (num_ctx)",
   "cfg_num_predict": "Prediction Count (num_predict)",
   "cfg_ollama_default": "Preferred AI Model",

@@ -25,6 +25,8 @@ def parse_arguments():
     parser = argparse.ArgumentParser(description="Match Extracted documents against ROPA activities using Ollama")
     parser.add_argument("--model", type=str, help="Ollama model to use", default=None)
     parser.add_argument("--no-think", action="store_true", help="Disable model thinking/chain-of-thought")
+    parser.add_argument("--gpu-profile", type=str, choices=["8gb", "12gb", "24gb"],
+                        help="GPU VRAM preset (overrides ollama_options)", default=None)
     args, _ = parser.parse_known_args()
     return args
 
@@ -38,9 +40,18 @@ LOG_FOLDER             = PROJECT_ROOT / get_config('log_folder', './logs')
 OLLAMA_URL             = classify_cfg.get('ollama_url', 'http://localhost:11434')
 OLLAMA_OPTIONS         = classify_cfg.get('ollama_options', {})
 
-# Ensure num_ctx is always set (default 4096)
+# Ensure num_ctx is always set (default 2048)
 if 'num_ctx' not in OLLAMA_OPTIONS:
-    OLLAMA_OPTIONS['num_ctx'] = 4096
+    OLLAMA_OPTIONS['num_ctx'] = 2048
+
+# Apply GPU profile override from CLI
+if CLI_ARGS.gpu_profile:
+    _gpu_profiles = get_config('gpu_profiles', {})
+    _profile = _gpu_profiles.get(CLI_ARGS.gpu_profile)
+    if _profile:
+        OLLAMA_OPTIONS = _profile.copy()
+        logging.info(f"Applied GPU profile '{CLI_ARGS.gpu_profile}': {OLLAMA_OPTIONS}")
+
 OLLAMA_MODEL_DEFAULT   = classify_cfg.get('ollama_model_default', 'mistral:latest')
 TIMEOUT_SECONDS        = classify_cfg.get('timeout_seconds', 30)
 API_REQUEST_TIMEOUT    = classify_cfg.get('api_request_timeout', 25)
@@ -153,6 +164,15 @@ def query_llm_for_document(client: ollama.Client, doc: dict, ropa_list: list) ->
     prompt = build_prompt(doc, shuffled_ropa, use_example=True)
     logging.info(f"Sending request for document {file_id}...")
 
+    # Dynamic num_ctx: scale up if prompt is large (e.g. many ROPA activities)
+    local_options = OLLAMA_OPTIONS.copy()
+    estimated_tokens = len(prompt) // 4 + local_options.get('num_predict', 64)
+    base_ctx = local_options.get('num_ctx', 2048)
+    if estimated_tokens > base_ctx * 0.8:
+        needed = ((int(estimated_tokens * 1.3) + 511) // 512) * 512
+        local_options['num_ctx'] = min(needed, 8192)
+        logging.info(f"Dynamic num_ctx increase to {local_options['num_ctx']} for document {file_id}")
+
     result = {'content': ''}
     def call_llm():
         try:
@@ -160,11 +180,11 @@ def query_llm_for_document(client: ollama.Client, doc: dict, ropa_list: list) ->
             _messages: list[dict[str, str]] = [{"role": "user", "content": prompt}]
             if CLI_ARGS.no_think:
                 try:
-                    resp = client.chat(model=_model, messages=_messages, options=OLLAMA_OPTIONS, format="json", think=False)
+                    resp = client.chat(model=_model, messages=_messages, options=local_options, format="json", think=False)
                 except TypeError:
-                    resp = client.chat(model=_model, messages=_messages, options=OLLAMA_OPTIONS, format="json")
+                    resp = client.chat(model=_model, messages=_messages, options=local_options, format="json")
             else:
-                resp = client.chat(model=_model, messages=_messages, options=OLLAMA_OPTIONS, format="json")
+                resp = client.chat(model=_model, messages=_messages, options=local_options, format="json")
             result['content'] = resp.get("message", {}).get("content", "").strip()
         except Exception as e:
             logging.error(f"Ollama error for {file_id}: {e}", exc_info=True)

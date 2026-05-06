@@ -19,6 +19,7 @@ from database import get_session, create_db_and_tables
 from models import Document, DocumentClassification
 from sqlmodel import select
 from config_manager import get_config
+from model_utils import get_model_profile, apply_model_profile
 
 # --- CONSTANTS AND PATHS DEFINITION ---
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -82,11 +83,10 @@ def clean_text(text: str) -> str:
 def get_ollama_models(client: ollama.Client) -> list[str]:
     """Retrieves the list of available Ollama models using the native client API."""
     try:
-        # FIX 3: Using native client.list() instead of raw requests.
         response = client.list()
         models_list = response.get("models", [])
         available_models = [m.get("model") or m.get("name") for m in models_list]
-        available_models = [m for m in available_models if m] # Remove any empty ones
+        available_models = [m for m in available_models if m]
         logging.info(f"Available models from Ollama: {available_models}")
         return available_models
     except Exception as e:
@@ -147,6 +147,24 @@ def select_ollama_model(client: ollama.Client, default_model: str, force_model: 
 
 ACTIVE_OLLAMA_MODEL = select_ollama_model(ollama_client, OLLAMA_MODEL_DEFAULT, CLI_ARGS.model)
 
+# --- MODEL PROFILE: ADAPT OPTIONS AND TIMEOUTS TO THE SELECTED MODEL ---
+MODEL_PROFILE = get_model_profile(ACTIVE_OLLAMA_MODEL)
+OLLAMA_OPTIONS = apply_model_profile(OLLAMA_OPTIONS, ACTIVE_OLLAMA_MODEL)
+OVERALL_OPERATION_TIMEOUT_SECONDS = int(OVERALL_OPERATION_TIMEOUT_SECONDS * MODEL_PROFILE['timeout_multiplier'])
+API_REQUEST_TIMEOUT_SECONDS = int(API_REQUEST_TIMEOUT_SECONDS * MODEL_PROFILE['timeout_multiplier'])
+# Re-initialise the client so the HTTP timeout matches the adjusted API timeout
+ollama_client = ollama.Client(host=OLLAMA_URL, timeout=API_REQUEST_TIMEOUT_SECONDS)
+# Auto-disable chain-of-thought for reasoning models (overrideable by --no-think flag)
+AUTO_DISABLE_THINKING = MODEL_PROFILE['is_thinking'] or CLI_ARGS.no_think
+if MODEL_PROFILE['is_thinking'] and not CLI_ARGS.no_think:
+    logging.info(f"Thinking model detected ({ACTIVE_OLLAMA_MODEL}): auto-disabling chain-of-thought for classification.")
+logging.info(
+    f"Model profile — num_ctx: {MODEL_PROFILE['num_ctx']}, "
+    f"timeout x{MODEL_PROFILE['timeout_multiplier']}, "
+    f"thinking: {MODEL_PROFILE['is_thinking']}, "
+    f"no-think: {AUTO_DISABLE_THINKING}"
+)
+
 # --- CORE LOGIC FOR OLLAMA REQUESTS WITH TIMEOUT ---
 def _execute_ollama_request_with_timeout(
     client: ollama.Client,
@@ -156,35 +174,37 @@ def _execute_ollama_request_with_timeout(
     operation_timeout: int,
     error_message_default: str,
     log_context_description: str,
-    disable_thinking: bool = False
+    disable_thinking: bool = False,
+    response_format: str | None = None,
 ) -> tuple[str, float]:
     """Executes a chat request to Ollama in a separate thread with timeout management."""
     logging.info(f"Sending '{log_context_description}' request to Ollama (model: {model_name}).")
     start_time = time.time()
-    
+
     result_holder: list[str | None] = [None]
     exception_holder: list[Exception | None] = [None]
 
     def ollama_worker():
         try:
-            # We enforce 'no-think' via prompt instructions to ensure cross-model compatibility
             processed_prompt = prompt_content
             if disable_thinking:
                 processed_prompt = "DO NOT use <think> tags. Answer directly.\n\n" + prompt_content
 
             _messages: list[dict[str, str]] = [{"role": "user", "content": processed_prompt}]
-            
-            # Try with think=False first; if the library doesn't support it, retry without
-            response = None
+
+            _chat_kw: dict = {"model": model_name, "messages": _messages, "options": ollama_api_options}
+            if response_format:
+                _chat_kw["format"] = response_format
+
+            # Try with think=False first; fall back if the library version doesn't support it
             if disable_thinking:
                 try:
-                    response = client.chat(model=model_name, messages=_messages, options=ollama_api_options, think=False)
+                    response = client.chat(**_chat_kw, think=False)
                 except TypeError:
-                    # Library version doesn't support 'think' parameter — fall back
-                    logging.info(f"'think' parameter not supported by ollama library, using prompt-only approach.")
-                    response = client.chat(model=model_name, messages=_messages, options=ollama_api_options)
+                    logging.info("'think' parameter not supported by ollama library, using prompt-only approach.")
+                    response = client.chat(**_chat_kw)
             else:
-                response = client.chat(model=model_name, messages=_messages, options=ollama_api_options)
+                response = client.chat(**_chat_kw)
 
             raw_content = response.get("message", {}).get("content", "").strip()
             
@@ -265,7 +285,7 @@ def classify_document_text(
         operation_timeout=timeout_sec,
         error_message_default=error_default,
         log_context_description=log_context,
-        disable_thinking=CLI_ARGS.no_think
+        disable_thinking=AUTO_DISABLE_THINKING,
     )
 
     # Final cleanup of common LLM artifacts (quotes, dots, etc)
@@ -273,6 +293,64 @@ def classify_document_text(
     final_value = re.sub(r'^[^\w]+|[^\w]+$', '', final_value)
     
     return (final_value if final_value else error_default, elapsed)
+
+# --- COMBINED CLASSIFICATION (SINGLE OLLAMA CALL FOR BOTH FIELDS) ---
+def classify_document_combined(
+    title: str,
+    text_content: str,
+    timeout_sec: int = OVERALL_OPERATION_TIMEOUT_SECONDS,
+) -> tuple[str, float, str, float]:
+    """Returns (generic_type, elapsed_s, short_description, elapsed_s) in one Ollama call.
+
+    Merges the two separate classification prompts into a single JSON request,
+    halving the number of model round-trips per document.
+    """
+    if not text_content.strip() and not title.strip():
+        return ("Text not available", 0.0, "Text not available", 0.0)
+
+    cleaned_title = clean_text(title)[:TITLE_MAX_LENGTH]
+    cleaned_text = clean_text(text_content)[:TEXT_MAX_LENGTH]
+
+    prompt = (
+        "Analyze this document. Respond ONLY with a valid JSON object — no explanation, no markdown.\n\n"
+        f"TITLE: {cleaned_title}\n"
+        f"TEXT: {cleaned_text}\n\n"
+        'Return exactly: {"type": "<1 to 3 words classifying the document>", "description": "<max 10 words describing it>"}'
+    )
+
+    raw_result, elapsed = _execute_ollama_request_with_timeout(
+        client=ollama_client,
+        prompt_content=prompt,
+        model_name=ACTIVE_OLLAMA_MODEL,
+        ollama_api_options=OLLAMA_OPTIONS,
+        operation_timeout=timeout_sec,
+        error_message_default='{"type": "Classification error", "description": "Classification error"}',
+        log_context_description="combined classification",
+        disable_thinking=AUTO_DISABLE_THINKING,
+        response_format="json",
+    )
+
+    generic = "Classification error"
+    description = "Classification error"
+    try:
+        parsed = json.loads(raw_result)
+        generic = str(parsed.get("type", generic)).strip()
+        description = str(parsed.get("description", description)).strip()
+    except (json.JSONDecodeError, TypeError):
+        logging.warning(f"Could not parse combined classification JSON: {raw_result[:120]}")
+        # Best-effort: treat the raw text as the generic type
+        generic = raw_result.strip().split('\n')[0][:80] or generic
+        description = generic
+
+    def _clean(val: str) -> str:
+        val = val.replace('"', '').replace("'", "")
+        return re.sub(r'^[^\w]+|[^\w]+$', '', val)
+
+    generic = _clean(generic) or "Classification error"
+    description = _clean(description) or "Classification error"
+    # elapsed is shared — store it against the first field, zero for the second
+    return (generic, elapsed, description, 0.0)
+
 
 # --- MAIN DOCUMENT CLASSIFICATION PROCESS ---
 def process_document_classifications(target_file_id: str | None = None) -> None:
@@ -322,11 +400,8 @@ def process_document_classifications(target_file_id: str | None = None) -> None:
                             time_short_s=0.0
                         )
                     else:
-                        generic_class, generic_time = classify_document_text(
-                            current_file_name, extracted_text, "generic_type", OVERALL_OPERATION_TIMEOUT_SECONDS
-                        )
-                        short_desc, short_time = classify_document_text(
-                            current_file_name, extracted_text, "short_description", OVERALL_OPERATION_TIMEOUT_SECONDS
+                        generic_class, generic_time, short_desc, short_time = classify_document_combined(
+                            current_file_name, extracted_text, OVERALL_OPERATION_TIMEOUT_SECONDS
                         )
                         new_class = DocumentClassification(
                             document_id=current_file_id,

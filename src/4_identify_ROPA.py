@@ -14,6 +14,7 @@ import ollama
 from pathlib import Path
 from tqdm import tqdm
 from config_manager import get_config
+from model_utils import get_model_profile, apply_model_profile
 
 # --- CONFIGURATION AND PATHS ---
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -110,6 +111,24 @@ def select_ollama_model(client: ollama.Client, force_model: str | None = None) -
 
 ACTIVE_OLLAMA_MODEL = select_ollama_model(ollama_client, CLI_ARGS.model)
 
+# --- MODEL PROFILE: ADAPT OPTIONS AND TIMEOUTS TO THE SELECTED MODEL ---
+MODEL_PROFILE = get_model_profile(ACTIVE_OLLAMA_MODEL)
+OLLAMA_OPTIONS = apply_model_profile(OLLAMA_OPTIONS, ACTIVE_OLLAMA_MODEL)
+TIMEOUT_SECONDS = int(TIMEOUT_SECONDS * MODEL_PROFILE['timeout_multiplier'])
+API_REQUEST_TIMEOUT = int(API_REQUEST_TIMEOUT * MODEL_PROFILE['timeout_multiplier'])
+# Re-initialise the client so the HTTP timeout matches the adjusted API timeout
+ollama_client = ollama.Client(host=OLLAMA_URL, timeout=API_REQUEST_TIMEOUT)
+# Auto-disable chain-of-thought for reasoning models (overrideable by --no-think flag)
+AUTO_DISABLE_THINKING = MODEL_PROFILE['is_thinking'] or CLI_ARGS.no_think
+if MODEL_PROFILE['is_thinking'] and not CLI_ARGS.no_think:
+    logging.info(f"Thinking model detected ({ACTIVE_OLLAMA_MODEL}): auto-disabling chain-of-thought for ROPA matching.")
+logging.info(
+    f"Model profile — num_ctx: {MODEL_PROFILE['num_ctx']}, "
+    f"timeout x{MODEL_PROFILE['timeout_multiplier']}, "
+    f"thinking: {MODEL_PROFILE['is_thinking']}, "
+    f"no-think: {AUTO_DISABLE_THINKING}"
+)
+
 # --- PROMPT CONSTRUCTION LOGIC ---
 def build_prompt(document: dict, processing_activities: list, use_example: bool = True) -> str:
     """Constructs the LLM prompt to match a document against ROPA processing activities."""
@@ -178,13 +197,15 @@ def query_llm_for_document(client: ollama.Client, doc: dict, ropa_list: list) ->
         try:
             _model = ACTIVE_OLLAMA_MODEL
             _messages: list[dict[str, str]] = [{"role": "user", "content": prompt}]
-            if CLI_ARGS.no_think:
+            _chat_kw = {"model": _model, "messages": _messages, "options": local_options, "format": "json"}
+            if AUTO_DISABLE_THINKING:
                 try:
-                    resp = client.chat(model=_model, messages=_messages, options=local_options, format="json", think=False)
+                    resp = client.chat(**_chat_kw, think=False)
                 except TypeError:
-                    resp = client.chat(model=_model, messages=_messages, options=local_options, format="json")
+                    logging.info("'think' parameter not supported by ollama library, using prompt-only approach.")
+                    resp = client.chat(**_chat_kw)
             else:
-                resp = client.chat(model=_model, messages=_messages, options=local_options, format="json")
+                resp = client.chat(**_chat_kw)
             result['content'] = resp.get("message", {}).get("content", "").strip()
         except Exception as e:
             logging.error(f"Ollama error for {file_id}: {e}", exc_info=True)

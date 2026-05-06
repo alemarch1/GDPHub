@@ -14,29 +14,63 @@ from presidio_anonymizer.entities import RecognizerResult as AnonymizerRecognize
 
 # --- ENTITY CONFIGURATION ---
 
-# All PII entity types to detect during analysis
+# All PII entity types to detect during analysis (global + locale-specific)
 ENTITIES_TO_DETECT = [
-    "PERSON",
-    "EMAIL_ADDRESS",
-    "PHONE_NUMBER",
-    "IBAN_CODE",
-    "CREDIT_CARD",
-    "IP_ADDRESS",
-    "IT_FISCAL_CODE",
+    # Global
+    "PERSON", "EMAIL_ADDRESS", "PHONE_NUMBER", "LOCATION",
+    "CREDIT_CARD", "CRYPTO", "IBAN_CODE", "IP_ADDRESS", "MAC_ADDRESS",
+    "DATE_TIME", "MEDICAL_LICENSE", "NRP", "URL",
+    # Italy
+    "IT_FISCAL_CODE", "IT_VAT_CODE", "IT_IDENTITY_CARD",
+    "IT_PASSPORT", "IT_DRIVER_LICENSE",
+    # Spain (Europe)
+    "ES_NIF",
+    # United Kingdom (Europe)
+    "UK_NHS",
+    # United States
+    "US_SSN", "US_PASSPORT", "US_DRIVER_LICENSE",
+    "US_BANK_NUMBER", "US_ITIN", "US_MBI", "US_NPI",
+    # Custom
     "LICENSE_PLATE",
 ]
 
 # Anonymization operators: each entity type gets a descriptive fixed label
 OPERATORS = {
-    "PERSON":         OperatorConfig("replace", {"new_value": "<PERSON>"}),
-    "EMAIL_ADDRESS":  OperatorConfig("replace", {"new_value": "<EMAIL>"}),
-    "PHONE_NUMBER":   OperatorConfig("replace", {"new_value": "<PHONE>"}),
-    "IBAN_CODE":      OperatorConfig("replace", {"new_value": "<IBAN>"}),
-    "CREDIT_CARD":    OperatorConfig("replace", {"new_value": "<CREDIT_CARD>"}),
-    "IP_ADDRESS":     OperatorConfig("replace", {"new_value": "<IP_ADDRESS>"}),
-    "IT_FISCAL_CODE": OperatorConfig("replace", {"new_value": "<FISCAL_CODE>"}),
-    "LICENSE_PLATE":  OperatorConfig("replace", {"new_value": "<LICENSE_PLATE>"}),
-    "DEFAULT":        OperatorConfig("replace", {"new_value": "<PII>"}),
+    # Global
+    "PERSON":            OperatorConfig("replace", {"new_value": "<PERSON>"}),
+    "EMAIL_ADDRESS":     OperatorConfig("replace", {"new_value": "<EMAIL>"}),
+    "PHONE_NUMBER":      OperatorConfig("replace", {"new_value": "<PHONE>"}),
+    "LOCATION":          OperatorConfig("replace", {"new_value": "<LOCATION>"}),
+    "CREDIT_CARD":       OperatorConfig("replace", {"new_value": "<CREDIT_CARD>"}),
+    "CRYPTO":            OperatorConfig("replace", {"new_value": "<CRYPTO>"}),
+    "IBAN_CODE":         OperatorConfig("replace", {"new_value": "<IBAN>"}),
+    "IP_ADDRESS":        OperatorConfig("replace", {"new_value": "<IP_ADDRESS>"}),
+    "MAC_ADDRESS":       OperatorConfig("replace", {"new_value": "<MAC_ADDRESS>"}),
+    "DATE_TIME":         OperatorConfig("replace", {"new_value": "<DATE>"}),
+    "MEDICAL_LICENSE":   OperatorConfig("replace", {"new_value": "<MEDICAL_LICENSE>"}),
+    "NRP":               OperatorConfig("replace", {"new_value": "<NRP>"}),
+    "URL":               OperatorConfig("replace", {"new_value": "<URL>"}),
+    # Italy
+    "IT_FISCAL_CODE":    OperatorConfig("replace", {"new_value": "<FISCAL_CODE>"}),
+    "IT_VAT_CODE":       OperatorConfig("replace", {"new_value": "<VAT_CODE>"}),
+    "IT_IDENTITY_CARD":  OperatorConfig("replace", {"new_value": "<ID_CARD>"}),
+    "IT_PASSPORT":       OperatorConfig("replace", {"new_value": "<PASSPORT>"}),
+    "IT_DRIVER_LICENSE": OperatorConfig("replace", {"new_value": "<DRIVER_LICENSE>"}),
+    # Spain
+    "ES_NIF":            OperatorConfig("replace", {"new_value": "<NIF>"}),
+    # UK
+    "UK_NHS":            OperatorConfig("replace", {"new_value": "<NHS>"}),
+    # US
+    "US_SSN":            OperatorConfig("replace", {"new_value": "<SSN>"}),
+    "US_PASSPORT":       OperatorConfig("replace", {"new_value": "<PASSPORT>"}),
+    "US_DRIVER_LICENSE": OperatorConfig("replace", {"new_value": "<DRIVER_LICENSE>"}),
+    "US_BANK_NUMBER":    OperatorConfig("replace", {"new_value": "<BANK_ACCOUNT>"}),
+    "US_ITIN":           OperatorConfig("replace", {"new_value": "<ITIN>"}),
+    "US_MBI":            OperatorConfig("replace", {"new_value": "<MBI>"}),
+    "US_NPI":            OperatorConfig("replace", {"new_value": "<NPI>"}),
+    # Custom
+    "LICENSE_PLATE":     OperatorConfig("replace", {"new_value": "<LICENSE_PLATE>"}),
+    "DEFAULT":           OperatorConfig("replace", {"new_value": "<PII>"}),
 }
 
 # --- CUSTOM RECOGNIZERS: EU LICENSE PLATES ---
@@ -84,6 +118,67 @@ def _build_license_plate_recognizer_en() -> PatternRecognizer:
         name="EuLicensePlateRecognizerEN",
     )
 
+# --- CUSTOM RECOGNIZERS: MAC ADDRESS (truly global, hardware identifier) ---
+
+_MAC_ADDRESS_PATTERNS = [
+    # Standard formats: 00:1A:2B:3C:4D:5E or 00-1A-2B-3C-4D-5E
+    Pattern("mac_colon_dash", r"\b(?:[0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}\b", score=0.85),
+    # Cisco-style: 001A.2B3C.4D5E
+    Pattern("mac_cisco",      r"\b(?:[0-9A-Fa-f]{4}\.){2}[0-9A-Fa-f]{4}\b",  score=0.7),
+]
+
+# --- CUSTOM RECOGNIZERS: US MBI (Medicare Beneficiary Identifier) ---
+# 11-character format: char1=1-9, char4/7/10/11=digits, others=letters from a restricted set
+# Letters exclude: B, I, L, O, S, Z (to avoid confusion with digits)
+_MBI_LETTER_CLASS = "[AC-HJ-KM-NP-RT-Y]"
+_MBI_ALNUM_CLASS  = "[AC-HJ-KM-NP-RT-Y0-9]"
+_MBI_CORE = (
+    r"[1-9]" + _MBI_LETTER_CLASS + _MBI_ALNUM_CLASS + r"\d"
+    + _MBI_LETTER_CLASS + _MBI_ALNUM_CLASS + r"\d"
+    + _MBI_LETTER_CLASS + _MBI_LETTER_CLASS + r"\d{2}"
+)
+# Dashed format: 1AC-D3F-GH45 (4-3-4 grouping is the official CMS layout)
+_MBI_DASHED = (
+    r"[1-9]" + _MBI_LETTER_CLASS + _MBI_ALNUM_CLASS + r"\d-"
+    + _MBI_LETTER_CLASS + _MBI_ALNUM_CLASS + r"\d-"
+    + _MBI_LETTER_CLASS + _MBI_LETTER_CLASS + r"\d{2}"
+)
+_US_MBI_PATTERNS = [
+    Pattern("us_mbi_compact", r"\b" + _MBI_CORE + r"\b",  score=0.7),
+    Pattern("us_mbi_dashed",  r"\b" + _MBI_DASHED + r"\b", score=0.75),
+]
+_US_MBI_CONTEXT = ["mbi", "medicare", "beneficiary"]
+
+# --- CUSTOM RECOGNIZERS: US NPI (National Provider Identifier) ---
+# 10-digit number, first digit is 1 or 2 (entity types). Pure regex has false positives,
+# so score is conservative — context words boost confidence.
+_US_NPI_PATTERNS = [
+    Pattern("us_npi_10digit", r"\b[12]\d{9}\b", score=0.3),
+]
+_US_NPI_CONTEXT = ["npi", "national provider", "provider identifier"]
+
+# --- CUSTOM RECOGNIZERS: ES_NIF cross-language clone ---
+# Presidio bundles EsNifRecognizer at supported_language="es" only.
+# Cloning the regex for it+en lets us detect Spanish IDs without loading a Spanish spaCy model.
+# NIF format: 8 digits + checksum letter (e.g. "12345678A")
+_ES_NIF_PATTERNS = [
+    Pattern("es_nif", r"\b\d{8}[A-HJ-NP-TV-Z]\b", score=0.6),
+]
+_ES_NIF_CONTEXT = ["nif", "dni", "documento", "identidad"]
+
+
+def _make_pattern_recognizer(
+    entity: str, patterns, name: str, language: str, context=None
+) -> PatternRecognizer:
+    """Helper to create a PatternRecognizer for a given language."""
+    return PatternRecognizer(
+        supported_entity=entity,
+        patterns=patterns,
+        supported_language=language,
+        name=name,
+        context=context,
+    )
+
 # --- ENGINE FACTORIES ---
 
 def create_analyzer() -> AnalyzerEngine:
@@ -112,11 +207,39 @@ def create_analyzer() -> AnalyzerEngine:
         supported_languages=["it", "en"],
     )
 
-    # Register custom recognizers
+    # Register custom recognizers — license plates (it + en)
     analyzer.registry.add_recognizer(_build_license_plate_recognizer())
     analyzer.registry.add_recognizer(_build_license_plate_recognizer_en())
 
-    logging.info("Presidio AnalyzerEngine initialized (it + en, with custom license plate recognizer).")
+    # Register MAC_ADDRESS for both languages (truly global, hardware identifier)
+    for _lang in ("it", "en"):
+        analyzer.registry.add_recognizer(_make_pattern_recognizer(
+            "MAC_ADDRESS", _MAC_ADDRESS_PATTERNS, f"MacAddressRecognizer_{_lang.upper()}", _lang
+        ))
+
+    # Register US-specific custom recognizers (US_MBI, US_NPI) for the EN pass.
+    # We also register them for IT so a stray US identifier in an Italian document is caught.
+    for _lang in ("it", "en"):
+        analyzer.registry.add_recognizer(_make_pattern_recognizer(
+            "US_MBI", _US_MBI_PATTERNS, f"UsMbiRecognizer_{_lang.upper()}", _lang,
+            context=_US_MBI_CONTEXT,
+        ))
+        analyzer.registry.add_recognizer(_make_pattern_recognizer(
+            "US_NPI", _US_NPI_PATTERNS, f"UsNpiRecognizer_{_lang.upper()}", _lang,
+            context=_US_NPI_CONTEXT,
+        ))
+
+    # Register ES_NIF for it + en (Presidio's bundled recognizer is es-only)
+    for _lang in ("it", "en"):
+        analyzer.registry.add_recognizer(_make_pattern_recognizer(
+            "ES_NIF", _ES_NIF_PATTERNS, f"EsNifRecognizer_{_lang.upper()}", _lang,
+            context=_ES_NIF_CONTEXT,
+        ))
+
+    logging.info(
+        "Presidio AnalyzerEngine initialized (it + en) with custom recognizers: "
+        "LICENSE_PLATE, MAC_ADDRESS, US_MBI, US_NPI, ES_NIF."
+    )
     return analyzer
 
 
@@ -160,9 +283,13 @@ def anonymize_text(
         )
 
         # Also run English analysis as fallback (catches English names, emails etc.)
-        # Exclude IT_FISCAL_CODE from English pass (no recognizer exists for it in EN)
+        # Exclude IT-only entities from the EN pass (their recognizers are registered only at "it")
         if language != "en":
-            en_entities = [e for e in ENTITIES_TO_DETECT if e != "IT_FISCAL_CODE"]
+            _IT_ONLY = {
+                "IT_FISCAL_CODE", "IT_VAT_CODE", "IT_IDENTITY_CARD",
+                "IT_PASSPORT", "IT_DRIVER_LICENSE",
+            }
+            en_entities = [e for e in ENTITIES_TO_DETECT if e not in _IT_ONLY]
             en_results = analyzer.analyze(
                 text=text,
                 language="en",

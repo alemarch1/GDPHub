@@ -5,10 +5,9 @@
 import sys
 import logging
 import argparse
-from pathlib import Path
-from database import get_session, create_db_and_tables
-from deletion_service import execute_deletion_workflow
-from utils_logging import setup_logging
+from gdphub.core.database import get_session, create_db_and_tables
+from gdphub.services.deletion import execute_deletion_workflow
+from gdphub.utils.logging import setup_logging
 
 # --- MAIN EXECUTION LOGIC ---
 def main():

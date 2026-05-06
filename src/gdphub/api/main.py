@@ -17,11 +17,12 @@ from fastapi.middleware.cors import CORSMiddleware
 import ollama
 import psutil
 
-from database import get_session, create_db_and_tables
-from models import Document, DocumentClassification, RopaRecord, DocumentRopaMapping, ProcessedEmail
+from gdphub.core.database import get_session, create_db_and_tables
+from gdphub.core.models import Document, DocumentClassification, DocumentLifecycle, RopaRecord, DocumentRopaMapping, ProcessedEmail
 from sqlmodel import select, delete
-from config_manager import get_config, set_config, Configuration
-from deletion_service import execute_deletion_workflow
+from gdphub.core.config_manager import get_config, set_config, Configuration
+from gdphub.services.deletion import execute_deletion_workflow
+from gdphub.core.settings import seed_dict, gpu_profile_migration_pairs
 
 # --- APPLICATION INITIALIZATION ---
 ACTIVE_PROCESS_PID = None
@@ -32,48 +33,15 @@ create_db_and_tables()
 def _seed_defaults():
     """Seeds the Configuration and RopaRecord tables with sensible defaults
     when the database is freshly created (i.e. tables are empty).
-    This ensures the application works out-of-the-box after a fresh clone."""
+    This ensures the application works out-of-the-box after a fresh clone.
+
+    Defaults live in :mod:`settings`; this function only handles persistence.
+    """
     with get_session() as session:
         # --- Seed Configuration defaults ---
         existing_configs = session.exec(select(Configuration)).first()
         if existing_configs is None:
-            defaults = {
-                "active_source": "local",
-                "input_folder": "./data/input",
-                "database_folder": "./data/output",
-                "log_folder": "./logs",
-                "log_level": "INFO",
-                "0_extract_mail.py": {
-                    "query": "",
-                    "max_emails": 50,
-                    "import_override_days": 0,
-                    "delete_after_processing": False,
-                    "import_override_ignore_processed": False
-                },
-                "extract_text.py": {
-                    "tesseract_path": "",
-                    "max_workers": 4
-                },
-                "classify_text.py": {
-                    "ollama_url": "http://localhost:11434",
-                    "ollama_model_default": "gemma3:4b",
-                    "title_max_length": 500,
-                    "text_max_length": 1500,
-                    "timeout_seconds": 60,
-                    "api_request_timeout": 45,
-                    "ollama_options": {
-                        "num_predict": 64,
-                        "temperature": 0.2,
-                        "num_ctx": 4096,
-                        "top_p": 0.9,
-                        "top_k": 40
-                    }
-                },
-                "extract_ROPA.py": {
-                    "ropa_folder": "./data/ROPA"
-                }
-            }
-            for key, value in defaults.items():
+            for key, value in seed_dict().items():
                 session.add(Configuration(key=key, value=json.dumps(value)))
             session.commit()
             print("[GDPHub] Default configuration seeded into database.")
@@ -117,6 +85,32 @@ def _seed_defaults():
             session.commit()
             print("[GDPHub] Example ROPA records seeded into database.")
 
+        # --- Migrate: add gpu_profile keys to existing databases ---
+        for new_key, new_val in gpu_profile_migration_pairs():
+            existing = session.exec(select(Configuration).where(Configuration.key == new_key)).first()
+            if existing is None:
+                session.add(Configuration(key=new_key, value=json.dumps(new_val)))
+        session.commit()
+
+        # --- Migrate: rename legacy script configuration keys ---
+        legacy_key_map = {
+            "0_extract_mail.py": "extract_mail",
+            "1_extract_text.py": "extract_text",
+            "2_classify_text.py": "classify_text",
+            "3_extract_ROPA.py": "extract_ropa",
+            "4_identify_ROPA.py": "identify_ropa",
+            "5_document_deletion.py": "document_deletion"
+        }
+        for old_key, new_key in legacy_key_map.items():
+            existing_old = session.exec(select(Configuration).where(Configuration.key == old_key)).first()
+            if existing_old:
+                # check if new_key already exists
+                existing_new = session.exec(select(Configuration).where(Configuration.key == new_key)).first()
+                if not existing_new:
+                    session.add(Configuration(key=new_key, value=existing_old.value))
+                session.delete(existing_old)
+        session.commit()
+
 _seed_defaults()
 
 # Enable CORS for local cross-origin connections during UI dev
@@ -128,8 +122,8 @@ app.add_middleware(
 )
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-PROJECT_ROOT = SCRIPT_DIR.parent
-CONFIG_FILE = SCRIPT_DIR / 'config.json'
+PROJECT_ROOT = SCRIPT_DIR.parent.parent.parent
+CONFIG_FILE = PROJECT_ROOT / 'src' / 'config.json'
 WEBUI_DIR = PROJECT_ROOT / 'web'
 
 # Auto-bootstrap directories for GitHub usability
@@ -146,7 +140,7 @@ async def get_app_config():
             result = {c.key: json.loads(c.value) for c in configs}
             
             # Inject outlook config from outlook.json
-            outlook_file = SCRIPT_DIR / "auth" / "outlook.json"
+            outlook_file = PROJECT_ROOT / "src" / "auth" / "outlook.json"
             if outlook_file.exists():
                 try:
                     with open(outlook_file, "r") as f:
@@ -155,7 +149,7 @@ async def get_app_config():
                     pass
                     
             # Inject gmail auth config from gmail.json
-            gmail_file = SCRIPT_DIR / "auth" / "gmail.json"
+            gmail_file = PROJECT_ROOT / "src" / "auth" / "gmail.json"
             if gmail_file.exists():
                 try:
                     with open(gmail_file, "r") as f:
@@ -183,7 +177,7 @@ async def save_app_config(request: Request):
     # Update Database
     for key, value in data.items():
         if key == "0_extract_mail_outlook":
-            outlook_file = SCRIPT_DIR / "auth" / "outlook.json"
+            outlook_file = PROJECT_ROOT / "src" / "auth" / "outlook.json"
             outlook_file.parent.mkdir(parents=True, exist_ok=True)
             outlook_data = {}
             if outlook_file.exists():
@@ -196,7 +190,7 @@ async def save_app_config(request: Request):
             with open(outlook_file, "w") as f:
                 json.dump(outlook_data, f, indent=4)
         elif key == "0_extract_mail_gmail_auth":
-            gmail_file = SCRIPT_DIR / "auth" / "gmail.json"
+            gmail_file = PROJECT_ROOT / "src" / "auth" / "gmail.json"
             gmail_file.parent.mkdir(parents=True, exist_ok=True)
             gmail_data = {}
             if gmail_file.exists():
@@ -222,29 +216,11 @@ async def save_app_config(request: Request):
                 json.dump(gmail_data, f, indent=4)
         else:
             set_config(key, value)
-        
-    # Sync bootstrap paths back to config.json to maintain path resolution
-    bootstrap_keys = ["database_folder", "log_folder", "input_folder"]
-    bootstrap_data = {}
-    
-    # Load existing config.json to preserve other manual bootstrap entries
-    if CONFIG_FILE.exists():
-        try:
-            with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
-                bootstrap_data = json.load(f)
-        except Exception:
-            pass
-            
-    updated_bootstrap = False
-    for bk in bootstrap_keys:
-        if bk in data:
-            bootstrap_data[bk] = data[bk]
-            updated_bootstrap = True
-            
-    if updated_bootstrap:
-        with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
-            json.dump(bootstrap_data, f, indent=2, ensure_ascii=False)
-            
+
+    # Note: previous versions mirrored ``database_folder``/``log_folder``/
+    # ``input_folder`` back to ``config.json``. That round-trip was removed
+    # — runtime DB-path resolution now uses the ``GDPHUB_DB_FOLDER`` env var
+    # (see ``database.py``), eliminating the chicken-and-egg dependency.
     return {"status": "success"}
 
 # --- OLLAMA MODEL ENDPOINTS ---
@@ -305,42 +281,38 @@ async def browse_local_folder(current_path: Optional[str] = None):
 
 # --- PIPELINE EXECUTION ENGINE ---
 
-# Allowlist of pipeline scripts that can be executed via the API.
-# This eliminates path-injection risk: user input is only used as a
-# lookup key, never concatenated into a filesystem path.
-ALLOWED_PIPELINE_SCRIPTS: dict[str, str] = {
-    "0_extract_mail.py":       "0_extract_mail.py",
-    "1_extract_text.py":       "1_extract_text.py",
-    "2_classify_text.py":      "2_classify_text.py",
-    "3_extract_ROPA.py":       "3_extract_ROPA.py",
-    "4_identify_ROPA.py":      "4_identify_ROPA.py",
-    "5_document_deletion.py":  "5_document_deletion.py",
-}
+# Allowlist of pipeline scripts executable via the API. Acts as a barrier
+# against path-injection: user input is only checked for membership, never
+# concatenated into a filesystem path.
+PIPELINE_SCRIPT_ALLOWLIST: frozenset[str] = frozenset({
+    "extract_mail",
+    "extract_text",
+    "classify_text",
+    "extract_ropa",
+    "identify_ropa",
+    "document_deletion",
+})
 
 async def run_script_generator(script_name: str, args: list):
     """Async generator that spawns a pipeline script and streams its stdout as SSE events."""
     global ACTIVE_PROCESS_PID
-    
+
     # Resolve script via allowlist — user input never touches the filesystem directly
-    safe_filename = ALLOWED_PIPELINE_SCRIPTS.get(script_name)
-    if safe_filename is None:
+    if script_name not in PIPELINE_SCRIPT_ALLOWLIST:
         yield "data: [Error] Access denied: Invalid or disallowed script name\n\n"
         yield "data: [END]\n\n"
         return
 
-    script_path = (SCRIPT_DIR / safe_filename).resolve()
-    if not script_path.exists():
-        yield f"data: [Error] Cannot find script {safe_filename}\n\n"
-        yield "data: [END]\n\n"
-        return
-    
-    cmd = [sys.executable, str(script_path)] + args
+    # Run as a module, e.g. gdphub.pipelines.extract_mail
+    cmd = [sys.executable, "-m", f"gdphub.pipelines.{script_name}"] + args
     yield f"data: Running command: {' '.join(cmd)}\n\n"
     
     process: Optional[asyncio.subprocess.Process] = None
     try:
         # We enforce unbuffered stdout so Python doesn't delay streaming until the buffer is full
         env = os.environ.copy()
+        # Add src to PYTHONPATH so gdphub package is resolvable
+        env["PYTHONPATH"] = str(PROJECT_ROOT / "src") + os.pathsep + env.get("PYTHONPATH", "")
         env["PYTHONUNBUFFERED"] = "1"
         env["PYTHONIOENCODING"] = "utf-8"
         
@@ -356,7 +328,6 @@ async def run_script_generator(script_name: str, args: list):
         
         assert process.stdout is not None
 
-        import re
         buf = b""
         while True:
             chunk = await process.stdout.read(64)
@@ -571,13 +542,22 @@ async def get_pending_stats():
             processed_email_ids = set(session.exec(select(ProcessedEmail.id)).all())
             pending_email_ids = processed_email_ids - existing_parent_ids
             
+            # Pre-extract email IDs that already have matching pending files —
+            # converts the previous O(len(emails) * len(files)) `startswith`
+            # scan into an O(len(emails) + len(files)) set lookup.
+            pending_email_ids_with_files = set()
+            for fname in pending_files_in_folder:
+                if fname.startswith("email_"):
+                    rest = fname[len("email_"):]
+                    underscore_idx = rest.find("_")
+                    if underscore_idx > 0:
+                        pending_email_ids_with_files.add(rest[:underscore_idx])
+
             total_pending = len(pending_files_in_folder)
             for eid in pending_email_ids:
-                prefix = f"email_{eid}_"
-                has_files_in_pending = any(fname.startswith(prefix) for fname in pending_files_in_folder)
-                if not has_files_in_pending:
+                if eid not in pending_email_ids_with_files:
                     total_pending += 1
-            
+
             return {"count": total_pending}
     except Exception as e:
         import logging
@@ -644,43 +624,55 @@ async def update_identified_mapping(mapping_id: int, request: Request):
 # --- LIFECYCLE AND JANITOR ENDPOINTS ---
 @app.get("/api/lifecycle")
 async def get_lifecycle():
-    """Returns all document lifecycle records with classification metadata."""
+    """Returns all document lifecycle records with classification metadata.
+
+    Implementation notes: equivalent to the original raw-SQL JOIN, executed
+    via SQLModel against the shared engine. Date fields are stringified with
+    Python's ``str()`` to mirror the prior pandas ``astype(str)`` behavior
+    (``None`` → ``"None"``, datetime → ``"YYYY-MM-DD HH:MM:SS[.ffffff]"``).
+    """
     try:
-        query = """
-        SELECT 
-            dl.id as lifecycle_id,
-            dl.document_id,
-            COALESCE(dl.document_type, d.type) as document_type,
-            dl.creation_date,
-            dl.scheduled_deletion_date,
-            dl.actual_deletion_date,
-            dl.status,
-            dl.notes,
-            dc.classification_generic as classification
-        FROM document_lifecycle dl
-        LEFT JOIN document_classification dc ON dl.document_id = dc.document_id
-        LEFT JOIN document d ON dl.document_id = d.id
-        ORDER BY dl.scheduled_deletion_date ASC
-        """
-        import sqlite3
-        import pandas as pd
-        
-        output_dir = PROJECT_ROOT / get_config("database_folder", "./data/output")
-        db_path = output_dir / "GDPHub.db"
-        
-        if not db_path.exists():
-            return {"data": []}
-            
-        conn = sqlite3.connect(str(db_path))
-        df = pd.read_sql_query(query, conn)
-        conn.close()
-        
-        # Convert datetime objects to string
-        df['scheduled_deletion_date'] = df['scheduled_deletion_date'].astype(str)
-        df['creation_date'] = df['creation_date'].astype(str)
-        df['actual_deletion_date'] = df['actual_deletion_date'].astype(str)
-        return {"data": df.to_dict(orient="records")}
-    except Exception as e:
+        with get_session() as session:
+            stmt = (
+                select(DocumentLifecycle, Document, DocumentClassification)
+                .join(Document, Document.id == DocumentLifecycle.document_id, isouter=True)  # type: ignore[arg-type]
+                .join(
+                    DocumentClassification,
+                    DocumentClassification.document_id == DocumentLifecycle.document_id,  # type: ignore[arg-type]
+                    isouter=True,
+                )
+                .order_by(DocumentLifecycle.scheduled_deletion_date.asc())  # type: ignore[union-attr]
+            )
+            rows = session.exec(stmt).all()
+
+            # Multiple classifications per document collapse to the latest one
+            # (highest id). The prior raw JOIN returned all combinations and
+            # relied on the LEFT-JOIN order — this preserves the *intent* and
+            # is deterministic.
+            best: dict[int, dict] = {}
+            for lc, doc, cls in rows:
+                lc_id = lc.id if lc.id is not None else id(lc)
+                existing = best.get(lc_id)
+                cls_score = cls.id if (cls is not None and cls.id is not None) else -1
+                if existing is None or cls_score > existing["_cls_score"]:
+                    best[lc_id] = {
+                        "lifecycle_id": lc.id,
+                        "document_id": lc.document_id,
+                        "document_type": lc.document_type or (doc.type if doc else None),
+                        "creation_date": str(lc.creation_date),
+                        "scheduled_deletion_date": str(lc.scheduled_deletion_date),
+                        "actual_deletion_date": str(lc.actual_deletion_date),
+                        "status": lc.status,
+                        "notes": lc.notes,
+                        "classification": cls.classification_generic if cls else None,
+                        "_cls_score": cls_score,
+                    }
+            data = []
+            for entry in best.values():
+                entry.pop("_cls_score", None)
+                data.append(entry)
+            return {"data": data}
+    except Exception:
         return {"data": []}
 
 @app.post("/api/lifecycle/{lifecycle_id}")
@@ -690,20 +682,19 @@ async def update_lifecycle(lifecycle_id: int, request: Request):
         data = await request.json()
         new_status = data.get("status")
         new_notes = data.get("notes")
-        
-        import sqlite3
-        db_path = PROJECT_ROOT / get_config("database_folder", "./data/output") / "GDPHub.db"
-        
-        conn = sqlite3.connect(str(db_path))
-        cur = conn.cursor()
-        cur.execute(
-            "UPDATE document_lifecycle SET status = ?, notes = ? WHERE id = ?",
-            (new_status, new_notes, lifecycle_id)
-        )
-        conn.commit()
-        conn.close()
+
+        with get_session() as session:
+            row = session.get(DocumentLifecycle, lifecycle_id)
+            if row is None:
+                raise HTTPException(status_code=404, detail="Lifecycle record not found")
+            row.status = new_status
+            row.notes = new_notes
+            session.add(row)
+            session.commit()
         return {"status": "success"}
-    except Exception as e:
+    except HTTPException:
+        raise
+    except Exception:
         raise HTTPException(status_code=500, detail="An internal server error occurred")
 
 

@@ -52,12 +52,12 @@ Six sequential scripts orchestrated via the WebUI or CLI:
 
 | # | Script | Purpose |
 |---|--------|---------|
-| 0 | `0_extract_mail.py` | Syncs emails + attachments from Gmail or Outlook |
-| 1 | `1_extract_text.py` | Extracts text, runs OCR, anonymizes PII, ingests into SQLite |
-| 2 | `2_classify_text.py` | LLM-powered classification via Ollama (JSON-mode) |
-| 3 | `3_extract_ROPA.py` | Imports corporate ROPA registry (.xlsx / .ods / .csv) |
-| 4 | `4_identify_ROPA.py` | AI-driven matching of documents to ROPA processing activities |
-| 5 | `5_document_deletion.py` | Secure deletion of expired documents (Cloud + Filesystem + DB) |
+| 0 | `extract_mail.py` | Syncs emails + attachments from Gmail or Outlook |
+| 1 | `extract_text.py` | Extracts text, runs OCR, anonymizes PII, ingests into SQLite |
+| 2 | `classify_text.py` | LLM-powered classification via Ollama (JSON-mode) |
+| 3 | `extract_ropa.py` | Imports corporate ROPA registry (.xlsx / .ods / .csv) |
+| 4 | `identify_ropa.py` | AI-driven matching of documents to ROPA processing activities |
+| 5 | `document_deletion.py` | Secure deletion of expired documents (Cloud + Filesystem + DB) |
 
 ---
 
@@ -80,16 +80,20 @@ ollama pull qwen3.5:9b
 **Run the web app:**
 
 ```bash
-python src/api.py
+# Set PYTHONPATH first (Linux/macOS)
+export PYTHONPATH="src"
+# Windows CMD: set PYTHONPATH=src
+
+python -m gdphub.api.main
 # → http://localhost:8000
 ```
 
 **Or run headless / CLI:**
 
 ```bash
-python src/2_classify_text.py --model qwen3.5:9b --run-all --no-think
-python src/4_identify_ROPA.py --model qwen3.5:9b --no-think
-python src/5_document_deletion.py --ids <UUID1> <UUID2> --force
+python -m gdphub.pipelines.classify_text --model qwen3.5:9b --run-all --no-think
+python -m gdphub.pipelines.identify_ropa --model qwen3.5:9b --no-think
+python -m gdphub.pipelines.document_deletion --ids <UUID1> <UUID2> --force
 ```
 
 ---
@@ -195,12 +199,12 @@ Sei script sequenziali orchestrabili dalla WebUI o da CLI:
 
 | # | Script | Scopo |
 |---|--------|-------|
-| 0 | `0_extract_mail.py` | Sincronizza email + allegati da Gmail o Outlook |
-| 1 | `1_extract_text.py` | Estrae testo, esegue OCR, anonimizza PII, inserisce in SQLite |
-| 2 | `2_classify_text.py` | Classificazione tramite LLM via Ollama (modalità JSON) |
-| 3 | `3_extract_ROPA.py` | Importa il registro ROPA aziendale (.xlsx / .ods / .csv) |
-| 4 | `4_identify_ROPA.py` | Associazione AI dei documenti alle attività ROPA |
-| 5 | `5_document_deletion.py` | Cancellazione sicura dei documenti scaduti (Cloud + Filesystem + DB) |
+| 0 | `extract_mail.py` | Sincronizza email + allegati da Gmail o Outlook |
+| 1 | `extract_text.py` | Estrae testo, esegue OCR, anonimizza PII, inserisce in SQLite |
+| 2 | `classify_text.py` | Classificazione tramite LLM via Ollama (modalità JSON) |
+| 3 | `extract_ropa.py` | Importa il registro ROPA aziendale (.xlsx / .ods / .csv) |
+| 4 | `identify_ropa.py` | Associazione AI dei documenti alle attività ROPA |
+| 5 | `document_deletion.py` | Cancellazione sicura dei documenti scaduti (Cloud + Filesystem + DB) |
 
 ---
 
@@ -223,16 +227,20 @@ ollama pull qwen3.5:9b
 **Avvia la web app:**
 
 ```bash
-python src/api.py
+# Prima imposta il PYTHONPATH (Linux/macOS)
+export PYTHONPATH="src"
+# Windows CMD: set PYTHONPATH=src
+
+python -m gdphub.api.main
 # → http://localhost:8000
 ```
 
 **Oppure esecuzione headless / CLI:**
 
 ```bash
-python src/2_classify_text.py --model qwen3.5:9b --run-all --no-think
-python src/4_identify_ROPA.py --model qwen3.5:9b --no-think
-python src/5_document_deletion.py --ids <UUID1> <UUID2> --force
+python -m gdphub.pipelines.classify_text --model qwen3.5:9b --run-all --no-think
+python -m gdphub.pipelines.identify_ropa --model qwen3.5:9b --no-think
+python -m gdphub.pipelines.document_deletion --ids <UUID1> <UUID2> --force
 ```
 
 ---

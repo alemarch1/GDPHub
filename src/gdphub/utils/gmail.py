@@ -2,14 +2,12 @@
 # Handles OAuth2 token loading, refreshing, and the interactive consent flow.
 # Verifies that the resulting credentials include 'modify' scope for the Janitor.
 
-import os
 import logging
 from pathlib import Path
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
-from config_manager import get_config
 
 # Scopes required:
 # - gmail.readonly: list and read messages for extraction
@@ -31,7 +29,7 @@ def get_gmail_service():
     It also verifies that the resulting credentials have 'gmail.modify' access,
     triggering an error if only 'readonly' is available.
     """
-    auth_file = SCRIPT_DIR / "auth" / "gmail.json"
+    auth_file = SCRIPT_DIR.parent.parent.parent / "src" / "auth" / "gmail.json"
     
     creds = None
     

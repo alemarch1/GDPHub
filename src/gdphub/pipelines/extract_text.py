@@ -4,6 +4,13 @@
 # license plates, IBANs, credit cards, etc.).
 # It uses parallel processing for greater efficiency.
 
+import os as _os
+import warnings as _warnings
+_os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "2")
+_os.environ.setdefault("TF_ENABLE_ONEDNN_OPTS", "0")
+_warnings.filterwarnings("ignore", message=".*CUDA path could not be detected.*")
+del _os, _warnings
+
 import os
 import sys
 import json
@@ -14,13 +21,13 @@ import logging
 from pathlib import Path
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from tqdm import tqdm
-from typing import Optional, Tuple
+from typing import Optional
 from datetime import datetime
 
-from database import get_session, create_db_and_tables
-from models import Document
+from gdphub.core.database import get_session, create_db_and_tables
+from gdphub.core.models import Document
 from sqlmodel import select
-from config_manager import get_config
+from gdphub.core.config_manager import get_config
 
 import pytesseract
 import fitz
@@ -51,8 +58,8 @@ if TESSERACT_PATH:
 else:
     logging.warning("Tesseract path (TESSERACT_PATH) not specified; image PDF OCR might not work.")
 
-from utils_logging import setup_logging
-from utils_presidio import create_analyzer, create_anonymizer, anonymize_text
+from gdphub.utils.logging import setup_logging
+from gdphub.utils.presidio import create_analyzer, create_anonymizer, anonymize_text
 from presidio_analyzer import AnalyzerEngine
 from presidio_anonymizer import AnonymizerEngine
 
@@ -64,12 +71,14 @@ _worker_analyzer: Optional[AnalyzerEngine] = None
 _worker_anonymizer: Optional[AnonymizerEngine] = None
 
 # --- GENERAL UTILITY FUNCTIONS ---
+from gdphub.utils.text import clean_text as _clean_text_impl
+
 def clean_text(text: str) -> str:
-    """Cleans text from unwanted characters and normalizes spaces."""
-    if not text: return ""
-    text = re.sub(r'[^\x20-\x7E\n\r\t]', '', text)
-    text = re.sub(r'\s+', ' ', text)
-    return text.strip()
+    """Cleans text from unwanted characters and normalizes spaces.
+
+    Thin wrapper preserving the historical CR-keeping behavior of this module.
+    """
+    return _clean_text_impl(text, keep_carriage_return=True)
 
 def generate_md5_hash(file_path: Path) -> Optional[str]:
     """Calculates the MD5 hash (digital fingerprint) of a file."""
@@ -378,9 +387,13 @@ def process_file(file_path: Path) -> dict | None:
     logging.debug(f"FileID: {record['id']} - Processed: {file_path.name}")
     return record
 
-def worker_init(log_dir: Path):
-    """Initializes logging and Presidio NLP engine in each worker process."""
-    # Each worker needs its own engine because spaCy models can't be pickled.
+def worker_init(log_dir: Path):  # noqa: ARG001 - kept for ProcessPoolExecutor initargs back-compat
+    """Initializes logging and Presidio NLP engine in each worker process.
+
+    Note: ``log_dir`` is intentionally unused — ``setup_logging`` resolves the
+    log folder from the configuration database. The parameter is preserved so
+    existing ``initargs=(log_dir,)`` callers keep working unchanged.
+    """
     global _worker_analyzer, _worker_anonymizer
     setup_logging("1_extract_text")
     _worker_analyzer = create_analyzer()
@@ -396,8 +409,6 @@ def process_files_in_directory(
         logging.error(f"Folder to scan '{scan_directory}' does not exist.")
         sys.exit(1)
     output_dir.mkdir(parents=True, exist_ok=True)
-    
-    output_file = output_dir / "extracted_documents.json"
 
     all_files = [f for f in scan_directory.glob("**/*") if f.is_file()]
     supported_extensions = set(EXTRACTOR_MAP.keys())
@@ -419,7 +430,24 @@ def process_files_in_directory(
         logging.info(f"Loaded {len(hashes_seen)} existing hashes from database. New files will be appended safely.")
     except Exception as e:
         logging.warning(f"Could not read existing database, starting fresh. Error: {e}")
-    
+
+    # Hash fast-path: drop already-known files BEFORE running the expensive
+    # extraction + Presidio anonymization pipeline. Keeps semantics identical
+    # (post-extraction hash dedup remains as a safety net for collisions).
+    if hashes_seen:
+        prefiltered = []
+        skipped_by_hash = 0
+        for f in files_to_process:
+            h = generate_md5_hash(f)
+            if h is not None and h in hashes_seen:
+                skipped_by_hash += 1
+                logging.info(f"Duplicate file (MD5, pre-extraction) skipped: {f}")
+                continue
+            prefiltered.append(f)
+        if skipped_by_hash:
+            logging.info(f"Hash fast-path skipped {skipped_by_hash} file(s) before extraction.")
+        files_to_process = prefiltered
+
     # ProcessPoolExecutor with initializer to configure logging in workers
     with ProcessPoolExecutor(max_workers=MAX_WORKERS, initializer=worker_init, initargs=(log_dir,)) as executor:
         futures = [executor.submit(process_file, f) for f in files_to_process]
@@ -445,7 +473,7 @@ def process_files_in_directory(
 
         # Delete anonymized files if we downloaded them from Gmail
         active_source = get_config('active_source', 'local')
-        mail_config = get_config('0_extract_mail.py', {})
+        mail_config = get_config('extract_mail', {})
         if active_source in ('gmail', 'outlook') and mail_config.get('delete_after_processing', True):
             for res in results:
                 file_path = Path(res['file_path'])
@@ -457,9 +485,9 @@ def process_files_in_directory(
             logging.info("Deleted processed Gmail original files successfully.")
 
     except IOError as e:
-        logging.error(f"Error writing output JSON file '{output_file}': {e}")
+        logging.error(f"I/O error while persisting extraction results: {e}")
     except Exception as e:
-        logging.error(f"Unexpected error saving JSON results: {e}")
+        logging.error(f"Unexpected error saving extraction results: {e}")
 
 # --- MAIN SCRIPT EXECUTION BLOCK ---
 if __name__ == "__main__":

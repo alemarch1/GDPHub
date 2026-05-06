@@ -62,4 +62,5 @@ echo "Opening browser to http://localhost:8000 in 3 seconds..."
 echo "Starting FastAPI server..."
 echo "Press Ctrl+C to stop the server."
 echo ""
-$PYTHON_CMD src/api.py
+export PYTHONPATH="src"
+$PYTHON_CMD -m gdphub.api.main

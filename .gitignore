@@ -20,12 +20,16 @@ desktop.ini
 # Scratch / experiments
 scratch/
 
-# Unused/deprecated directories inside src
+# Unused/deprecated directories
 src/web/
 src/serve/
 
 # Authentication / OAuth credentials & tokens (DO NOT UPLOAD)
 src/auth/
+
+# Data directories (do not upload documents)
+data/
+src/data/
 
 # Data files that may contain personal info
 *.xlsx

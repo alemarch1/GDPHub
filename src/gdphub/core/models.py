@@ -71,7 +71,10 @@ class DocumentLifecycle(SQLModel, table=True):
     """Tracks the retention lifecycle and deletion status of a document."""
     __tablename__ = "document_lifecycle"  # type: ignore[assignment]
     id: Optional[int] = Field(default=None, primary_key=True)
-    document_id: str = Field(index=True)
+    # FK declared so newly-created DBs enforce referential integrity. Existing
+    # SQLite databases keep their original schema (SQLite does not auto-add
+    # FK constraints on ALTER TABLE) — the application logic is the same.
+    document_id: str = Field(foreign_key="document.id", index=True)
     document_type: Optional[str] = None
     creation_date: Optional[datetime] = None
     scheduled_deletion_date: datetime

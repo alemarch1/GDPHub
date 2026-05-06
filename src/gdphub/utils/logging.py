@@ -5,7 +5,7 @@ import logging
 from logging.handlers import RotatingFileHandler
 import sys
 from pathlib import Path
-from config_manager import get_config
+from gdphub.core.config_manager import get_config
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = SCRIPT_DIR.parent

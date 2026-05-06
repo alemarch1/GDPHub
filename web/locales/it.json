@@ -25,6 +25,8 @@
   "cfg_mail_download_folder": "Cartella Staging Email",
   "cfg_max_emails": "Limite Email",
   "cfg_max_threads": "Thread di Elaborazione Parallela",
+  "cfg_gpu_profile": "Profilo VRAM GPU",
+  "cfg_num_batch": "Dimensione Batch (num_batch)",
   "cfg_num_ctx": "Finestra Contesto (num_ctx)",
   "cfg_num_predict": "Numero di predizioni (num_predict)",
   "cfg_ollama_default": "Modello IA Predefinito",

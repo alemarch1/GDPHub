@@ -22,7 +22,7 @@ def main():
         return
 
     current_source = config.get("active_source", "local")
-    print(f"--- Data Source Selection ---")
+    print("--- Data Source Selection ---")
     print(f"Current source is: '{current_source}'\n")
     print("Select the data source to be processed in the next steps:")
     print("1 - Local Folder (uses the unified 'input_folder' setting)")
@@ -55,11 +55,11 @@ def main():
         print(f"\nActive source is already set to '{selected_source}'. No changes made.")
 
     if selected_source == "gmail":
-        print("\nNext step: Run 'python 0_extract_mail.py' to fetch new emails from Gmail.")
+        print("\nNext step: Run 'python extract_mail' to fetch new emails from Gmail.")
     elif selected_source == "outlook":
-        print("\nNext step: Run 'python 0_extract_mail.py' to fetch new emails from Outlook.")
+        print("\nNext step: Run 'python extract_mail' to fetch new emails from Outlook.")
     else:
-         print("\nNext step: Run 'python 1_extract_text.py' to process your configured local folder.")
+         print("\nNext step: Run 'python extract_text' to process your configured local folder.")
 
 if __name__ == "__main__":
     main()

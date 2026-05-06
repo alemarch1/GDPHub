@@ -27,4 +27,5 @@ REM --- Start the FastAPI server (blocking) ---
 echo Starting FastAPI server...
 echo Press Ctrl+C to stop the server.
 echo.
-python src/api.py
+set PYTHONPATH=src
+python -m gdphub.api.main

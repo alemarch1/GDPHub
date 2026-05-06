@@ -4,13 +4,12 @@
 import json
 import os
 import sys
-from pathlib import Path
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), ".")))
 
-from database import engine, CONFIG_FILE
-from models import Configuration
-from sqlmodel import Session, select
+from gdphub.core.database import engine, CONFIG_FILE
+from gdphub.core.models import Configuration
+from sqlmodel import Session
 
 def seed_config():
     """Reads config.json and upserts each key-value pair into the Configuration table."""

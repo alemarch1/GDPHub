@@ -5,24 +5,39 @@
 # and saves the results enriched with classifications in a new JSON file.
 # It features progress saving and resume capabilities to prevent data loss.
 
-import os
 import sys
-import time
 import json
 import logging
-import threading
 import re
+import argparse
 from pathlib import Path
 from tqdm import tqdm
-import ollama 
-from database import get_session, create_db_and_tables
-from models import Document, DocumentClassification
+import ollama
+from gdphub.core.database import get_session, create_db_and_tables
+from gdphub.core.models import Document, DocumentClassification
 from sqlmodel import select
-from config_manager import get_config
+from gdphub.core.config_manager import get_config
+from gdphub.utils.model import get_model_profile  # noqa: F401  retained for back-compat re-export
 
 # --- CONSTANTS AND PATHS DEFINITION ---
 SCRIPT_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = SCRIPT_DIR.parent
+
+# --- ARGUMENT PARSING ---
+# Parsed at module load so config-time blocks (e.g. GPU profile override below)
+# can react to CLI flags without raising NameError.
+def parse_arguments():
+    parser = argparse.ArgumentParser(description="Classify extracted text using Ollama")
+    parser.add_argument("--model", type=str, help="Ollama model to use", default=None)
+    parser.add_argument("--run-all", action="store_true", help="Process entire JSON without prompting")
+    parser.add_argument("--file-id", type=str, help="Specific file_id to process", default=None)
+    parser.add_argument("--no-think", action="store_true", help="Disable model thinking/chain-of-thought")
+    parser.add_argument("--gpu-profile", type=str, choices=["8gb", "12gb", "24gb"],
+                        help="GPU VRAM preset (overrides ollama_options)", default=None)
+    args, _ = parser.parse_known_args()
+    return args
+
+CLI_ARGS = parse_arguments()
 
 # --- INITIAL CONFIGURATION LOADING ---
 _temp_logger = logging.getLogger("config_loader")
@@ -41,9 +56,17 @@ OLLAMA_URL = classify_config.get('ollama_url', 'http://localhost:11434')
 OLLAMA_OPTIONS = classify_config.get('ollama_options', {})
 OLLAMA_MODEL_DEFAULT = classify_config.get('ollama_model_default', 'mistral:latest')
 
-# Ensure num_ctx is always set (default 4096)
+# Ensure num_ctx is always set (default 2048)
 if 'num_ctx' not in OLLAMA_OPTIONS:
-    OLLAMA_OPTIONS['num_ctx'] = 4096
+    OLLAMA_OPTIONS['num_ctx'] = 2048
+
+# Apply GPU profile override from CLI
+if CLI_ARGS.gpu_profile:
+    _gpu_profiles = get_config('gpu_profiles', {})
+    _profile = _gpu_profiles.get(CLI_ARGS.gpu_profile)
+    if _profile:
+        OLLAMA_OPTIONS = _profile.copy()
+        logging.info(f"Applied GPU profile '{CLI_ARGS.gpu_profile}': {OLLAMA_OPTIONS}")
 
 TITLE_MAX_LENGTH = classify_config.get('title_max_length', 500)
 TEXT_MAX_LENGTH = classify_config.get('text_max_length', 1500)
@@ -51,10 +74,13 @@ OVERALL_OPERATION_TIMEOUT_SECONDS = classify_config.get('timeout_seconds', 60)
 API_REQUEST_TIMEOUT_SECONDS = classify_config.get('api_request_timeout', 45)
 
 # --- LOGGING SYSTEM CONFIGURATION ---
-from utils_logging import setup_logging
+from gdphub.utils.logging import setup_logging
 setup_logging("2_classify_text")
 
 # --- OLLAMA CLIENT INITIALIZATION ---
+# Bootstrap a temporary client purely so the interactive `select_ollama_model`
+# below can list models. The full ChatService (with timeouts and model-profile
+# adjustments) is constructed after model selection.
 try:
     ollama_client = ollama.Client(host=OLLAMA_URL, timeout=API_REQUEST_TIMEOUT_SECONDS)
     logging.info(f"Ollama client initialized for URL: {OLLAMA_URL} with API timeout of {API_REQUEST_TIMEOUT_SECONDS}s.")
@@ -63,41 +89,20 @@ except Exception as e:
     sys.exit(1)
 
 # --- UTILITY FUNCTIONS ---
-def clean_text(text: str) -> str:
-    """Cleans the text by removing non-ASCII characters and normalizing spaces."""
-    if not isinstance(text, str):
-        text = str(text)
-    cleaned = re.sub(r'[^\x20-\x7E\n\t]', '', text)
-    cleaned = re.sub(r'\s+', ' ', cleaned)
-    return cleaned.strip()
+from gdphub.utils.text import clean_text  # noqa: F401  re-exported for module-internal calls
 
 def get_ollama_models(client: ollama.Client) -> list[str]:
     """Retrieves the list of available Ollama models using the native client API."""
     try:
-        # FIX 3: Using native client.list() instead of raw requests.
         response = client.list()
         models_list = response.get("models", [])
         available_models = [m.get("model") or m.get("name") for m in models_list]
-        available_models = [m for m in available_models if m] # Remove any empty ones
+        available_models = [m for m in available_models if m]
         logging.info(f"Available models from Ollama: {available_models}")
         return available_models
     except Exception as e:
         logging.error(f"Unexpected error retrieving Ollama models: {e}", exc_info=True)
         return []
-
-import argparse
-
-# --- ARGUMENT PARSING HELPER ---
-def parse_arguments():
-    parser = argparse.ArgumentParser(description="Classify extracted text using Ollama")
-    parser.add_argument("--model", type=str, help="Ollama model to use", default=None)
-    parser.add_argument("--run-all", action="store_true", help="Process entire JSON without prompting")
-    parser.add_argument("--file-id", type=str, help="Specific file_id to process", default=None)
-    parser.add_argument("--no-think", action="store_true", help="Disable model thinking/chain-of-thought")
-    args, _ = parser.parse_known_args()
-    return args
-
-CLI_ARGS = parse_arguments()
 
 def select_ollama_model(client: ollama.Client, default_model: str, force_model: str | None = None) -> str:
     """Allows the user to select an Ollama model or uses the forced/default one."""
@@ -137,7 +142,34 @@ def select_ollama_model(client: ollama.Client, default_model: str, force_model: 
 
 ACTIVE_OLLAMA_MODEL = select_ollama_model(ollama_client, OLLAMA_MODEL_DEFAULT, CLI_ARGS.model)
 
+# --- MODEL PROFILE: ADAPT OPTIONS AND TIMEOUTS TO THE SELECTED MODEL ---
+# Centralized in services.ollama_client.ChatService — preserves the previous
+# behavior (model-profile multipliers, GPU-profile override, think-tag
+# stripping, threaded timeout) without inlining 80 LOC of scaffolding.
+from gdphub.services.ollama_client import ChatService
+
+_chat_service = ChatService.from_config(
+    section='classify_text.py',
+    cli_model=ACTIVE_OLLAMA_MODEL,
+    cli_gpu_profile=CLI_ARGS.gpu_profile,
+    cli_no_think=CLI_ARGS.no_think,
+    default_model=OLLAMA_MODEL_DEFAULT,
+    default_timeout=OVERALL_OPERATION_TIMEOUT_SECONDS,
+    default_api_timeout=API_REQUEST_TIMEOUT_SECONDS,
+)
+
+# Re-export the post-profile values for any downstream caller that imported
+# them (preserved for zero-regression with external CLI invocations / tests).
+MODEL_PROFILE = get_model_profile(ACTIVE_OLLAMA_MODEL)
+OLLAMA_OPTIONS = _chat_service.options
+OVERALL_OPERATION_TIMEOUT_SECONDS = _chat_service.operation_timeout
+API_REQUEST_TIMEOUT_SECONDS = _chat_service.api_timeout
+ollama_client = _chat_service.client
+AUTO_DISABLE_THINKING = _chat_service.disable_thinking
+
 # --- CORE LOGIC FOR OLLAMA REQUESTS WITH TIMEOUT ---
+# Thin shim that preserves the historical signature while delegating the
+# threading + think-tag handling to ``services.ollama_client.ChatService``.
 def _execute_ollama_request_with_timeout(
     client: ollama.Client,
     prompt_content: str,
@@ -146,72 +178,24 @@ def _execute_ollama_request_with_timeout(
     operation_timeout: int,
     error_message_default: str,
     log_context_description: str,
-    disable_thinking: bool = False
+    disable_thinking: bool = False,
+    response_format: str | None = None,
 ) -> tuple[str, float]:
-    """Executes a chat request to Ollama in a separate thread with timeout management."""
-    logging.info(f"Sending '{log_context_description}' request to Ollama (model: {model_name}).")
-    start_time = time.time()
-    
-    result_holder: list[str | None] = [None]
-    exception_holder: list[Exception | None] = [None]
+    """Execute a chat request via the centralized ChatService.
 
-    def ollama_worker():
-        try:
-            # We enforce 'no-think' via prompt instructions to ensure cross-model compatibility
-            processed_prompt = prompt_content
-            if disable_thinking:
-                processed_prompt = "DO NOT use <think> tags. Answer directly.\n\n" + prompt_content
-
-            _messages: list[dict[str, str]] = [{"role": "user", "content": processed_prompt}]
-            
-            # Try with think=False first; if the library doesn't support it, retry without
-            response = None
-            if disable_thinking:
-                try:
-                    response = client.chat(model=model_name, messages=_messages, options=ollama_api_options, think=False)
-                except TypeError:
-                    # Library version doesn't support 'think' parameter — fall back
-                    logging.info(f"'think' parameter not supported by ollama library, using prompt-only approach.")
-                    response = client.chat(model=model_name, messages=_messages, options=ollama_api_options)
-            else:
-                response = client.chat(model=model_name, messages=_messages, options=ollama_api_options)
-
-            raw_content = response.get("message", {}).get("content", "").strip()
-            
-            # 1. Standard extraction: remove everything inside <think> tags
-            clean_content = re.sub(r'<think>.*?</think>', '', raw_content, flags=re.DOTALL).strip()
-            
-            # 2. Fallback: if clean_content is empty but raw exists, the model wrote only inside tags
-            if not clean_content and raw_content:
-                if "</think>" in raw_content:
-                    clean_content = raw_content.split("</think>")[-1].strip()
-                
-                # 3. Last Resort: extract the last line of the thinking process as the answer
-                if not clean_content:
-                    think_matches = re.findall(r'<think>(.*?)(?:</think>|$)', raw_content, flags=re.DOTALL)
-                    if think_matches:
-                        last_thought_block = think_matches[-1].strip().split('\n')
-                        clean_content = last_thought_block[-1].strip()
-                    else:
-                        clean_content = raw_content
-
-            result_holder[0] = clean_content if clean_content else error_message_default
-        except Exception as e: 
-            logging.error(f"Error during request for '{log_context_description}': {e}", exc_info=False)
-            exception_holder[0] = e
-            result_holder[0] = f"{error_message_default} (Error)"
-            
-    request_thread = threading.Thread(target=ollama_worker)
-    request_thread.start()
-    request_thread.join(timeout=operation_timeout)
-
-    elapsed_time = time.time() - start_time
-
-    if request_thread.is_alive():
-        logging.error(f"General timeout for '{log_context_description}' after {operation_timeout}s.")
-        return (f"Timeout: {error_message_default}", elapsed_time)
-        
-    return (result_holder[0] or error_message_default, elapsed_time)
+    The ``client``/``model_name``/``disable_thinking`` arguments are preserved
+    for back-compat. ``ChatService`` handles model targeting and ``think=False``
+    fallback internally; the per-call ``ollama_api_options`` override is
+    routed through :meth:`ChatService.chat_options`.
+    """
+    return _chat_service.chat_options(
+        prompt_content,
+        options=ollama_api_options,
+        error_default=error_message_default,
+        log_context=log_context_description,
+        operation_timeout=operation_timeout,
+        response_format=response_format,
+    )
 
 # --- FUNCTION TO CLASSIFY DOCUMENT TEXT ---
 def classify_document_text(
@@ -255,7 +239,7 @@ def classify_document_text(
         operation_timeout=timeout_sec,
         error_message_default=error_default,
         log_context_description=log_context,
-        disable_thinking=CLI_ARGS.no_think
+        disable_thinking=AUTO_DISABLE_THINKING,
     )
 
     # Final cleanup of common LLM artifacts (quotes, dots, etc)
@@ -263,6 +247,64 @@ def classify_document_text(
     final_value = re.sub(r'^[^\w]+|[^\w]+$', '', final_value)
     
     return (final_value if final_value else error_default, elapsed)
+
+# --- COMBINED CLASSIFICATION (SINGLE OLLAMA CALL FOR BOTH FIELDS) ---
+def classify_document_combined(
+    title: str,
+    text_content: str,
+    timeout_sec: int = OVERALL_OPERATION_TIMEOUT_SECONDS,
+) -> tuple[str, float, str, float]:
+    """Returns (generic_type, elapsed_s, short_description, elapsed_s) in one Ollama call.
+
+    Merges the two separate classification prompts into a single JSON request,
+    halving the number of model round-trips per document.
+    """
+    if not text_content.strip() and not title.strip():
+        return ("Text not available", 0.0, "Text not available", 0.0)
+
+    cleaned_title = clean_text(title)[:TITLE_MAX_LENGTH]
+    cleaned_text = clean_text(text_content)[:TEXT_MAX_LENGTH]
+
+    prompt = (
+        "Analyze this document. Respond ONLY with a valid JSON object — no explanation, no markdown.\n\n"
+        f"TITLE: {cleaned_title}\n"
+        f"TEXT: {cleaned_text}\n\n"
+        'Return exactly: {"type": "<1 to 3 words classifying the document>", "description": "<max 10 words describing it>"}'
+    )
+
+    raw_result, elapsed = _execute_ollama_request_with_timeout(
+        client=ollama_client,
+        prompt_content=prompt,
+        model_name=ACTIVE_OLLAMA_MODEL,
+        ollama_api_options=OLLAMA_OPTIONS,
+        operation_timeout=timeout_sec,
+        error_message_default='{"type": "Classification error", "description": "Classification error"}',
+        log_context_description="combined classification",
+        disable_thinking=AUTO_DISABLE_THINKING,
+        response_format="json",
+    )
+
+    generic = "Classification error"
+    description = "Classification error"
+    try:
+        parsed = json.loads(raw_result)
+        generic = str(parsed.get("type", generic)).strip()
+        description = str(parsed.get("description", description)).strip()
+    except (json.JSONDecodeError, TypeError):
+        logging.warning(f"Could not parse combined classification JSON: {raw_result[:120]}")
+        # Best-effort: treat the raw text as the generic type
+        generic = raw_result.strip().split('\n')[0][:80] or generic
+        description = generic
+
+    def _clean(val: str) -> str:
+        val = val.replace('"', '').replace("'", "")
+        return re.sub(r'^[^\w]+|[^\w]+$', '', val)
+
+    generic = _clean(generic) or "Classification error"
+    description = _clean(description) or "Classification error"
+    # elapsed is shared — store it against the first field, zero for the second
+    return (generic, elapsed, description, 0.0)
+
 
 # --- MAIN DOCUMENT CLASSIFICATION PROCESS ---
 def process_document_classifications(target_file_id: str | None = None) -> None:
@@ -312,11 +354,8 @@ def process_document_classifications(target_file_id: str | None = None) -> None:
                             time_short_s=0.0
                         )
                     else:
-                        generic_class, generic_time = classify_document_text(
-                            current_file_name, extracted_text, "generic_type", OVERALL_OPERATION_TIMEOUT_SECONDS
-                        )
-                        short_desc, short_time = classify_document_text(
-                            current_file_name, extracted_text, "short_description", OVERALL_OPERATION_TIMEOUT_SECONDS
+                        generic_class, generic_time, short_desc, short_time = classify_document_combined(
+                            current_file_name, extracted_text, OVERALL_OPERATION_TIMEOUT_SECONDS
                         )
                         new_class = DocumentClassification(
                             document_id=current_file_id,

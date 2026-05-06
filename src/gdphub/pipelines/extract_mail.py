@@ -17,11 +17,11 @@ import email.utils
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
 from tqdm import tqdm
-from database import get_session, create_db_and_tables
-from models import ProcessedEmail
+from gdphub.core.database import get_session, create_db_and_tables
+from gdphub.core.models import ProcessedEmail
 from sqlmodel import select
 
-from config_manager import get_config
+from gdphub.core.config_manager import get_config
 
 # --- CONFIGURATION AND PATHS ---
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -34,9 +34,7 @@ def extract_gmail(mail_download_folder: Path, processed_emails: set,
                   mail_config: dict, query: str, max_emails: int,
                   ignore_processed: bool):
     """Extracts emails and attachments from a Gmail mailbox via Google API."""
-    from googleapiclient.discovery import build
-    from googleapiclient.errors import HttpError
-    from utils_gmail import get_gmail_service
+    from gdphub.utils.gmail import get_gmail_service
 
     try:
         service = get_gmail_service()
@@ -84,9 +82,7 @@ def extract_gmail(mail_download_folder: Path, processed_emails: set,
                     except Exception as date_err:
                         logging.warning(f"Failed to parse email date '{date_str}': {date_err}")
 
-                parts = [payload]
-                if 'parts' in payload:
-                    parts = payload['parts']
+                parts = payload.get('parts', [payload])
 
                 plain_text_parts = []
                 html_text_parts = []
@@ -188,7 +184,7 @@ def extract_outlook(mail_download_folder: Path, processed_emails: set,
                     outlook_config: dict, max_emails: int,
                     ignore_processed: bool):
     """Extracts emails and attachments from an Outlook mailbox via Microsoft Graph API."""
-    from utils_outlook import get_outlook_service
+    from gdphub.utils.outlook import get_outlook_service
 
     try:
         client = get_outlook_service()
@@ -352,7 +348,7 @@ def main():
     # Setup directories
     mail_download_folder.mkdir(parents=True, exist_ok=True)
 
-    from utils_logging import setup_logging
+    from gdphub.utils.logging import setup_logging
     setup_logging("0_extract_mail")
     logging.info(f"Extraction destination directory configured as: {mail_download_folder.resolve()}")
     logging.info(f"Active source: {active_source}")
@@ -389,9 +385,9 @@ def main():
 
     else:
         # ── Gmail path (default) ──
-        mail_config = get_config("0_extract_mail.py", {})
+        mail_config = get_config("extract_mail", {})
         if not mail_config:
-            logging.error("Missing '0_extract_mail.py' section in the configuration database.")
+            logging.error("Missing 'extract_mail' section in the configuration database.")
             sys.exit(1)
 
         query = mail_config.get("query", "is:unread")

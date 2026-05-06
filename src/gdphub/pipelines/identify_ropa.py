@@ -2,18 +2,17 @@
 # using an Ollama language model. It analyzes the document's content and
 # classification to identify which legal processing activities it relates to.
 
-import os
 import sys
 import json
 import logging
 import re
-import threading
 import random
 import argparse
 import ollama
 from pathlib import Path
 from tqdm import tqdm
-from config_manager import get_config
+from gdphub.core.config_manager import get_config
+from gdphub.utils.model import get_model_profile  # noqa: F401  retained for back-compat re-export
 
 # --- CONFIGURATION AND PATHS ---
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -25,6 +24,11 @@ def parse_arguments():
     parser = argparse.ArgumentParser(description="Match Extracted documents against ROPA activities using Ollama")
     parser.add_argument("--model", type=str, help="Ollama model to use", default=None)
     parser.add_argument("--no-think", action="store_true", help="Disable model thinking/chain-of-thought")
+    parser.add_argument("--gpu-profile", type=str, choices=["8gb", "12gb", "24gb"],
+                        help="GPU VRAM preset (overrides ollama_options)", default=None)
+    parser.add_argument("--seed", type=int, default=None,
+                        help="Optional global RNG seed for fully reproducible runs. "
+                             "When omitted, per-document shuffles are seeded by file_id.")
     args, _ = parser.parse_known_args()
     return args
 
@@ -38,15 +42,24 @@ LOG_FOLDER             = PROJECT_ROOT / get_config('log_folder', './logs')
 OLLAMA_URL             = classify_cfg.get('ollama_url', 'http://localhost:11434')
 OLLAMA_OPTIONS         = classify_cfg.get('ollama_options', {})
 
-# Ensure num_ctx is always set (default 4096)
+# Ensure num_ctx is always set (default 2048)
 if 'num_ctx' not in OLLAMA_OPTIONS:
-    OLLAMA_OPTIONS['num_ctx'] = 4096
+    OLLAMA_OPTIONS['num_ctx'] = 2048
+
+# Apply GPU profile override from CLI
+if CLI_ARGS.gpu_profile:
+    _gpu_profiles = get_config('gpu_profiles', {})
+    _profile = _gpu_profiles.get(CLI_ARGS.gpu_profile)
+    if _profile:
+        OLLAMA_OPTIONS = _profile.copy()
+        logging.info(f"Applied GPU profile '{CLI_ARGS.gpu_profile}': {OLLAMA_OPTIONS}")
+
 OLLAMA_MODEL_DEFAULT   = classify_cfg.get('ollama_model_default', 'mistral:latest')
 TIMEOUT_SECONDS        = classify_cfg.get('timeout_seconds', 30)
 API_REQUEST_TIMEOUT    = classify_cfg.get('api_request_timeout', 25)
 
 # --- LOGGING SYSTEM CONFIGURATION ---
-from utils_logging import setup_logging
+from gdphub.utils.logging import setup_logging
 setup_logging("4_identify_ROPA")
 
 # --- OLLAMA CLIENT INITIALIZATION ---
@@ -58,10 +71,7 @@ except Exception as e:
     sys.exit(1)
 
 # --- UTILITY FUNCTIONS ---
-def clean_text(text: str) -> str:
-    """Removes non-ASCII characters and normalizes whitespace."""
-    txt = re.sub(r'[^\x20-\x7E\n\t]', '', text)
-    return re.sub(r'\s+', ' ', txt).strip()
+from gdphub.utils.text import clean_text  # noqa: F401  re-exported for module-internal calls
 
 def get_models(client: ollama.Client) -> list:
     """Retrieves the list of available Ollama models using the native client API."""
@@ -98,6 +108,27 @@ def select_ollama_model(client: ollama.Client, force_model: str | None = None) -
         return OLLAMA_MODEL_DEFAULT
 
 ACTIVE_OLLAMA_MODEL = select_ollama_model(ollama_client, CLI_ARGS.model)
+
+# --- MODEL PROFILE: ADAPT OPTIONS AND TIMEOUTS TO THE SELECTED MODEL ---
+# Centralized in services.ollama_client.ChatService — see ``classify_text.py``.
+from gdphub.services.ollama_client import ChatService
+
+_chat_service = ChatService.from_config(
+    section='classify_text.py',
+    cli_model=ACTIVE_OLLAMA_MODEL,
+    cli_gpu_profile=CLI_ARGS.gpu_profile,
+    cli_no_think=CLI_ARGS.no_think,
+    default_model=OLLAMA_MODEL_DEFAULT,
+    default_timeout=TIMEOUT_SECONDS,
+    default_api_timeout=API_REQUEST_TIMEOUT,
+)
+
+MODEL_PROFILE = get_model_profile(ACTIVE_OLLAMA_MODEL)
+OLLAMA_OPTIONS = _chat_service.options
+TIMEOUT_SECONDS = _chat_service.operation_timeout
+API_REQUEST_TIMEOUT = _chat_service.api_timeout
+ollama_client = _chat_service.client
+AUTO_DISABLE_THINKING = _chat_service.disable_thinking
 
 # --- PROMPT CONSTRUCTION LOGIC ---
 def build_prompt(document: dict, processing_activities: list, use_example: bool = True) -> str:
@@ -147,39 +178,36 @@ def query_llm_for_document(client: ollama.Client, doc: dict, ropa_list: list) ->
     cls = doc.get('classification_generic', '')
     desc = doc.get('description_short', '')
 
+    # Deterministic shuffle: per-document seed derived from file_id so re-runs
+    # against the same document produce identical permutations. A global --seed
+    # flag (when supplied) takes precedence for fully fixed runs.
+    seed_source = CLI_ARGS.seed if CLI_ARGS.seed is not None else hash(file_id) & 0xFFFFFFFF
+    rng = random.Random(seed_source)
     shuffled_ropa = ropa_list.copy()
-    random.shuffle(shuffled_ropa)
+    rng.shuffle(shuffled_ropa)
 
     prompt = build_prompt(doc, shuffled_ropa, use_example=True)
     logging.info(f"Sending request for document {file_id}...")
 
-    result = {'content': ''}
-    def call_llm():
-        try:
-            _model = ACTIVE_OLLAMA_MODEL
-            _messages: list[dict[str, str]] = [{"role": "user", "content": prompt}]
-            if CLI_ARGS.no_think:
-                try:
-                    resp = client.chat(model=_model, messages=_messages, options=OLLAMA_OPTIONS, format="json", think=False)
-                except TypeError:
-                    resp = client.chat(model=_model, messages=_messages, options=OLLAMA_OPTIONS, format="json")
-            else:
-                resp = client.chat(model=_model, messages=_messages, options=OLLAMA_OPTIONS, format="json")
-            result['content'] = resp.get("message", {}).get("content", "").strip()
-        except Exception as e:
-            logging.error(f"Ollama error for {file_id}: {e}", exc_info=True)
+    # Dynamic num_ctx: scale up if prompt is large (e.g. many ROPA activities)
+    local_options = OLLAMA_OPTIONS.copy()
+    estimated_tokens = len(prompt) // 4 + local_options.get('num_predict', 64)
+    base_ctx = local_options.get('num_ctx', 2048)
+    if estimated_tokens > base_ctx * 0.8:
+        needed = ((int(estimated_tokens * 1.3) + 511) // 512) * 512
+        local_options['num_ctx'] = min(needed, 8192)
+        logging.info(f"Dynamic num_ctx increase to {local_options['num_ctx']} for document {file_id}")
 
-    th = threading.Thread(target=call_llm)
-    th.start()
-    th.join(timeout=TIMEOUT_SECONDS)
-    
-    if th.is_alive():
-        logging.error(f"Timeout for {file_id} after {TIMEOUT_SECONDS}s")
-        return "Processing Activity not identified", cls, desc
+    answer, _elapsed = _chat_service.chat_options(
+        prompt,
+        options=local_options,
+        error_default="",
+        log_context=f"ROPA matching for {file_id}",
+        operation_timeout=TIMEOUT_SECONDS,
+        response_format="json",
+    )
 
-    answer = result['content']
-    
-    if not answer:
+    if answer.startswith("Timeout: ") or not answer:
         return "Processing Activity not identified", cls, desc
 
     # Parse JSON response
@@ -216,8 +244,8 @@ def query_llm_for_document(client: ollama.Client, doc: dict, ropa_list: list) ->
 # --- MAIN DOCUMENT IDENTIFICATION PROCESS ---
 def process_identification():
     """Loads documents and ROPA records, runs LLM matching, and saves results to the database."""
-    from database import get_session, create_db_and_tables
-    from models import Document, RopaRecord, DocumentRopaMapping
+    from gdphub.core.database import get_session, create_db_and_tables
+    from gdphub.core.models import Document, RopaRecord, DocumentRopaMapping
     from sqlmodel import select
     create_db_and_tables()
     try:
@@ -297,8 +325,8 @@ def process_identification():
     except Exception as e:
         logging.error(f"Error during identification process: {e}", exc_info=True)
                     
-    logging.info(f"Processing complete.")
-    print(f"Processing complete!")
+    logging.info("Processing complete.")
+    print("Processing complete!")
 
 # --- SCRIPT EXECUTION ENTRY POINT ---
 if __name__ == "__main__":

@@ -3,19 +3,15 @@
 # It supports manual column mapping via a CLI interactive session or automated
 # mapping via CLI arguments.
 
-import os
-import sys
 import json
-import logging
 import argparse
 from pathlib import Path
-from pandas import DataFrame
 import pandas as pd
 
-from database import get_session, create_db_and_tables
-from models import RopaRecord
+from gdphub.core.database import get_session, create_db_and_tables
+from gdphub.core.models import RopaRecord
 from sqlmodel import delete
-from config_manager import get_config
+from gdphub.core.config_manager import get_config
 
 # --- CONFIGURATION AND PATHS ---
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -32,7 +28,7 @@ def parse_arguments():
 CLI_ARGS = parse_arguments()
 
 
-from utils_logging import setup_logging
+from gdphub.utils.logging import setup_logging
 
 def select_input_file(folder_path: Path, valid_extensions: list) -> Path | None:
     """

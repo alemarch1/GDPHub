@@ -1,45 +1,9 @@
 const { createApp, ref, reactive, computed, onMounted, nextTick, watch } = Vue;
 
-const useSortableTable = (dataRef) => {
-    const sortKey = ref('');
-    const sortAsc = ref(true);
-
-    const sortBy = (key) => {
-        if (sortKey.value === key) {
-            sortAsc.value = !sortAsc.value;
-        } else {
-            sortKey.value = key;
-            sortAsc.value = true;
-        }
-    };
-
-    const sortedData = computed(() => {
-        const key = sortKey.value;
-        const asc = sortAsc.value;
-        const rawData = dataRef.value || [];
-        
-        if (!key || !Array.isArray(rawData) || rawData.length === 0) {
-            return rawData;
-        }
-
-        return [...rawData].sort((a, b) => {
-            let valA = a[key] ?? '';
-            let valB = b[key] ?? '';
-            
-            valA = String(valA).toLowerCase();
-            valB = String(valB).toLowerCase();
-            
-            if (valA < valB) return asc ? -1 : 1;
-            if (valA > valB) return asc ? 1 : -1;
-            return 0;
-        });
-    });
-
-    return { sortKey, sortAsc, sortBy, sortedData };
-};
-
-
-
+// Reusable composables and helpers live in web/composables.js (loaded first
+// in index.html). Pull them into the local lexical scope so the rest of this
+// file reads exactly like the previous monolithic version.
+const { useSortableTable, formatTime, formatDate, logTs, readSSEStream } = window.GDPHub;
 
 const app = createApp({
     setup() {
@@ -48,8 +12,7 @@ const app = createApp({
 
         const loadTranslations = async () => {
             try {
-                const res = await fetch('/locales/' + currentLang.value + '.json?v=2012');
-                translations.value = await res.json();
+                translations.value = await GDPHubAPI.locales.load(currentLang.value);
             } catch (err) {
                 console.error("Failed to load translations:", err);
             }
@@ -85,7 +48,8 @@ const app = createApp({
             log_level: 'INFO',
             mail: { client_id: '', client_secret: '', query: '', max_emails: 50, import_override_days: 0, delete_after_processing: false, import_override_ignore_processed: false },
             ext: { tesseract_path: '', max_workers: 12 },
-            cls: { ollama_url: 'http://localhost:11434', ollama_model_default: '', title_max_length: 500, text_max_length: 1500, timeout_seconds: 30, api_request_timeout: 25, options: { temperature: 0.2, num_ctx: 4096, top_p: 0.9, top_k: 40, num_predict: 64 } },
+            gpu_profile: '12gb',
+            cls: { ollama_url: 'http://localhost:11434', ollama_model_default: '', title_max_length: 500, text_max_length: 1500, timeout_seconds: 30, api_request_timeout: 25, options: { temperature: 0.2, num_ctx: 2048, num_batch: 256, top_p: 0.9, top_k: 40, num_predict: 64 } },
             ropa: { ropa_folder: '' },
             outlook: { client_id: '', tenant_id: 'common', query_filter: 'isRead eq false', max_emails: 50, import_override_days: 0, delete_after_processing: false, import_override_ignore_processed: false }
         });
@@ -102,15 +66,14 @@ const app = createApp({
 
         const loadConfiguration = async () => {
             try {
-                const res = await fetch('/api/config');
-                const data = await res.json();
+                const data = await GDPHubAPI.config.get();
                 config.active_source = data.active_source || 'gmail';
                 config.input_folder = data.input_folder || '';
                 config.database_folder = data.database_folder || '';
                 config.log_folder = data.log_folder || '';
                 config.log_level = data.log_level || 'INFO';
 
-                const gmail = data['0_extract_mail.py'] || {};
+                const gmail = data['extract_mail'] || {};
                 const gmailAuth = data['0_extract_mail_gmail_auth'] || {};
                 config.mail.client_id = gmailAuth.client_id || '';
                 config.mail.client_secret = gmailAuth.client_secret || '';
@@ -131,10 +94,12 @@ const app = createApp({
                 config.cls.text_max_length = cls.text_max_length || 1500;
                 config.cls.timeout_seconds = cls.timeout_seconds || 30;
                 config.cls.api_request_timeout = cls.api_request_timeout || 25;
+                config.gpu_profile = data['gpu_profile'] || 'custom';
                 const opts = cls.ollama_options || {};
                 config.cls.options.num_predict = opts.num_predict || 64;
                 config.cls.options.temperature = opts.temperature || 0.2;
-                config.cls.options.num_ctx = opts.num_ctx || 4096;
+                config.cls.options.num_ctx = opts.num_ctx || 2048;
+                config.cls.options.num_batch = opts.num_batch || 256;
                 config.cls.options.top_p = opts.top_p || 0.9;
                 config.cls.options.top_k = opts.top_k || 40;
 
@@ -161,8 +126,9 @@ const app = createApp({
                 database_folder: config.database_folder,
                 log_folder: config.log_folder,
                 log_level: config.log_level,
+                gpu_profile: config.gpu_profile,
                 "0_extract_mail_gmail_auth": { client_id: config.mail.client_id, client_secret: config.mail.client_secret },
-                "0_extract_mail.py": { 
+                "extract_mail": { 
                     query: config.mail.query, 
                     max_emails: config.mail.max_emails, 
                     import_override_days: config.mail.import_override_days,
@@ -183,22 +149,30 @@ const app = createApp({
                 "0_extract_mail_outlook": { ...config.outlook }
             };
             try {
-                const req = await fetch('/api/config', {
-                    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(dataToSave)
-                });
-                if(req.ok) {
-                    showToast(currentLang.value === 'it' ? "Configurazione Salvata!" : "Config Successfully Saved!");
-                    loadModels();
-                }
+                await GDPHubAPI.config.save(dataToSave);
+                showToast(currentLang.value === 'it' ? "Configurazione Salvata!" : "Config Successfully Saved!");
+                loadModels();
             } catch(e) {
                 showToast("Failed to save config.");
             }
         };
 
+        const GPU_PROFILES = {
+            "8gb":  { num_predict: 64, temperature: 0.2, num_ctx: 1536, num_batch: 128, top_p: 0.9, top_k: 40 },
+            "12gb": { num_predict: 64, temperature: 0.2, num_ctx: 2048, num_batch: 256, top_p: 0.9, top_k: 40 },
+            "24gb": { num_predict: 64, temperature: 0.2, num_ctx: 4096, num_batch: 512, top_p: 0.9, top_k: 40 },
+        };
+
+        const applyGpuProfile = (profileName) => {
+            const p = GPU_PROFILES[profileName];
+            if (p) Object.assign(config.cls.options, p);
+        };
+
         const saveInputFolder = async () => {
              try {
-                await fetch('/api/config', {
-                    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ active_source: config.active_source, input_folder: config.input_folder })
+                await GDPHubAPI.config.save({
+                    active_source: config.active_source,
+                    input_folder: config.input_folder,
                 });
             } catch(e) {}
         };
@@ -213,9 +187,7 @@ const app = createApp({
             let currentPath = pathKey.split('.').reduce((o, i) => o[i], config) || '';
 
             try {
-                const res = await fetch(`/api/utils/browse-folder?current_path=${encodeURIComponent(currentPath)}`);
-                if (!res.ok) throw new Error("API Connection Error");
-                const data = await res.json();
+                const data = await GDPHubAPI.utils.browseFolder(currentPath);
                 if (data.path) {
                     const keys = pathKey.split('.');
                     if (keys.length === 1) config[keys[0]] = data.path;
@@ -238,7 +210,7 @@ const app = createApp({
         const canPause = computed(() => processState.value === 'running');
         const canResume = computed(() => processState.value === 'paused');
 
-        const controlProcess = async (action, state) => { await fetch(`/api/control/${action}`, { method: 'POST' }); processState.value = state; };
+        const controlProcess = async (action, state) => { await GDPHubAPI.control(action); processState.value = state; };
         const stopProcess = () => controlProcess('stop', 'stopped');
         const pauseProcess = () => controlProcess('pause', 'paused');
         const resumeProcess = () => controlProcess('resume', 'running');
@@ -259,25 +231,19 @@ const app = createApp({
         };
 
         const showPipelineProgress = ref(false);
+        const isPipelineLoading = ref(false);
         const pipelineProgressPercent = ref(0);
         const isTerminalCollapsed = ref(true);
         const scriptStatuses = reactive({
-            '0_extract_mail.py': 'idle',
-            '1_extract_text.py': 'idle',
-            '2_classify_text.py': 'idle',
-            '4_identify_ROPA.py': 'idle'
+            'extract_mail': 'idle',
+            'extract_text': 'idle',
+            'classify_text': 'idle',
+            'identify_ropa': 'idle'
         });
         const pipelineStartTime = ref(null);
         const pipelineElapsedTime = ref("00:00");
         const pipelineRemainingTime = ref("--:--");
         let pipelineTimer = null;
-
-        const formatTime = (seconds) => {
-            if (isNaN(seconds) || seconds < 0) return "--:--";
-            const m = Math.floor(seconds / 60).toString().padStart(2, '0');
-            const s = (seconds % 60).toString().padStart(2, '0');
-            return `${m}:${s}`;
-        };
 
         const models = ref([]);
         const classifyModel = ref('');
@@ -287,8 +253,7 @@ const app = createApp({
 
         const loadModels = async () => {
             try {
-                const res = await fetch('/api/ollama/models');
-                const data = await res.json();
+                const data = await GDPHubAPI.ollama.models();
                 if(data.models) models.value = data.models;
                 if(data.default) {
                     classifyModel.value = data.default;
@@ -304,15 +269,20 @@ const app = createApp({
                     args.push("--run-all", "--model", classifyModel.value);
                     if (classifyNoThink.value) args.push("--no-think");
                 }
-                if (scriptName.includes("identify_ROPA")) {
+                if (scriptName.includes("identify_ropa")) {
                     args.push("--model", identifyModel.value);
                     if (identifyNoThink.value) args.push("--no-think");
+                }
+                if (config.gpu_profile && config.gpu_profile !== 'custom') {
+                    args.push("--gpu-profile", config.gpu_profile);
                 }
             }
             terminalOutput.value = `>>> Launching ${scriptName}...\n`;
             scriptStatuses[scriptName] = 'running';
             processState.value = 'running';
-            showPipelineProgress.value = false;
+            showPipelineProgress.value = true;
+            isPipelineLoading.value = true;
+            pipelineProgressPercent.value = 0;
             pipelineStartTime.value = Date.now();
             pipelineElapsedTime.value = "00:00";
             pipelineRemainingTime.value = "--:--";
@@ -331,49 +301,29 @@ const app = createApp({
             }, 1000);
 
             try {
-                const response = await fetch(`/api/run/${scriptName}`, {
-                     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ args })
-                });
-                if (!response.body) throw new Error("ReadableStream not supported");
-                const reader = response.body.getReader();
-                const decoder = new TextDecoder('utf-8');
-                let buffer = '';
-                while(true) {
-                    const { done, value } = await reader.read();
-                    if(done) {
+                const response = await GDPHubAPI.run.pipeline(scriptName, args);
+                await readSSEStream(response, (kind, payload) => {
+                    if (kind === 'progress') {
+                        isPipelineLoading.value = false;
+                        pipelineProgressPercent.value = payload.percent;
+                        showPipelineProgress.value = true;
+                        replaceLastTerminalLine(payload.text);
+                    } else if (kind === 'line') {
+                        terminalOutput.value += payload + '\n';
+                    } else if (kind === 'end') {
+                        isPipelineLoading.value = false;
                         pipelineProgressPercent.value = 100;
                         setTimeout(() => {
                             showPipelineProgress.value = false;
                             clearInterval(pipelineTimer);
                         }, 2000);
-                        break;
                     }
-                    if(!value) continue;
-                    const chunk = decoder.decode(value, {stream: true});
-                    buffer += chunk;
-                    let lines = buffer.split('\n');
-                    buffer = lines.pop(); 
-                    
-                    let outBuf = '';
-                    lines.forEach(line => {
-                        if (line.startsWith('data: ')) {
-                            const actualLine = line.substring(6);
-                            if (actualLine.startsWith('__PROGRESS__:')) {
-                                const parts = actualLine.substring(13).split('::');
-                                pipelineProgressPercent.value = parseFloat(parts[0]);
-                                showPipelineProgress.value = true;
-                                replaceLastTerminalLine(parts[1] || '');
-                            } else if (actualLine !== '[END]') {
-                                outBuf += actualLine + '\n';
-                            }
-                        }
-                    });
-                    if (outBuf) terminalOutput.value += outBuf;
-                }
+                });
             } catch(e) {
                 terminalOutput.value += `[System Fatal Error]: ${e.message}\n`;
             } finally {
                 processState.value = 'stopped';
+                isPipelineLoading.value = false;
                 if (pipelineProgressPercent.value === 100) {
                     scriptStatuses[scriptName] = 'success';
                     setTimeout(() => { if (scriptStatuses[scriptName] === 'success') scriptStatuses[scriptName] = 'idle'; }, 3000);
@@ -391,8 +341,7 @@ const app = createApp({
         const { sortKey: ropaSortKey, sortAsc: ropaSortAsc, sortBy: ropaSortBy, sortedData: sortedRopaData } = useSortableTable(ropaDataCache);
         const loadRopaData = async () => {
             try {
-                const res = await fetch('/api/ropa');
-                const d = await res.json();
+                const d = await GDPHubAPI.ropa.list();
                 ropaDataCache.value = d.data || [];
             } catch(e) {}
         };
@@ -474,9 +423,7 @@ const app = createApp({
             row["Retention Periods"] = "+" + (ropaEditingRow.num * multiplier) + " days";
 
             try {
-                await fetch('/api/ropa', {
-                    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ data: ropaDataCache.value })
-                });
+                await GDPHubAPI.ropa.save(ropaDataCache.value);
                 showToast(currentLang.value === 'it' ? "Salvataggio riga completato": "Row saved successfully");
                 isRopaModalOpen.value = false;
                 loadRopaData();
@@ -499,14 +446,12 @@ const app = createApp({
             const fd = new FormData();
             fd.append('file', ropaFileInput.value.files[0]);
             try {
-                 const req = await fetch('/api/upload_ropa', { method: 'POST', body: fd });
+                 const req = await GDPHubAPI.ropa.upload(fd);
                  if(req.ok) {
                      const data = await req.json();
                      showToast(currentLang.value === 'it' ? "File caricato. Trasformazione..." : "File uploaded. Processing...");
                      selectedFileName.value = ''; // Reset after upload
-                     const runRes = await fetch('/api/run/3_extract_ROPA.py', {
-                        method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ args: ["--file", data.file_path, "--mapping", "{}"] })
-                     });
+                     const runRes = await GDPHubAPI.run.pipeline('extract_ropa', ["--file", data.file_path, "--mapping", "{}"]);
                      if (runRes.body) {
                         const reader = runRes.body.getReader();
                         while(true) { const {done} = await reader.read(); if(done) break; }
@@ -526,18 +471,15 @@ const app = createApp({
         const { sortKey: idenSortKey, sortAsc: idenSortAsc, sortBy: idenSortBy, sortedData: sortedIdenData } = useSortableTable(idenData);
         const loadDashboardData = async () => {
             try {
-                const dRes = await fetch('/api/documents');
-                docsData.value = (await dRes.json()).data || [];
-                const iRes = await fetch('/api/identified');
-                idenData.value = (await iRes.json()).data || [];
+                docsData.value = (await GDPHubAPI.documents.list()).data || [];
+                idenData.value = (await GDPHubAPI.identified.list()).data || [];
                 loadPendingCount();
             } catch(e) {}
         };
 
         const loadPendingCount = async () => {
             try {
-                const res = await fetch('/api/stats/pending');
-                const data = await res.json();
+                const data = await GDPHubAPI.stats.pending();
                 pendingCount.value = data.count || 0;
             } catch(e) { pendingCount.value = 0; }
         };
@@ -561,9 +503,7 @@ const app = createApp({
         const saveIdenEditor = async () => {
             if (!idenEditingRow.mapping_id) return;
             try {
-                await fetch('/api/identified/' + idenEditingRow.mapping_id, {
-                    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ropa_id: idenEditingRow.ropa_id || null })
-                });
+                await GDPHubAPI.identified.update(idenEditingRow.mapping_id, { ropa_id: idenEditingRow.ropa_id || null });
                 showToast(currentLang.value === 'it' ? 'Associazione aggiornata!' : 'Mapping updated!');
                 isIdenModalOpen.value = false;
                 loadDashboardData();
@@ -583,19 +523,8 @@ const app = createApp({
 
         const loadLifecycleData = async () => {
             try {
-                const res = await fetch('/api/lifecycle');
-                lcData.value = (await res.json()).data || [];
+                lcData.value = (await GDPHubAPI.lifecycle.list()).data || [];
             } catch(e) {}
-        };
-
-        const formatDate = (val) => {
-            if(!val || val === '-') return '-';
-            const sVal = String(val).toUpperCase();
-            if(sVal === 'NONE' || sVal === 'NAT' || sVal === 'NULL') return '-';
-            
-            if(val.includes(' ')) return val.split(' ')[0];
-            if(val.includes('T')) return val.split('T')[0];
-            return val;
         };
 
         const openLcEditor = (row) => {
@@ -612,9 +541,7 @@ const app = createApp({
         const saveLcEditor = async () => {
             if(!lcEditingRow.id) return;
             try {
-                await fetch('/api/lifecycle/' + lcEditingRow.id, {
-                    method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ status: lcEditingRow.status, notes: lcEditingRow.notes })
-                });
+                await GDPHubAPI.lifecycle.update(lcEditingRow.id, { status: lcEditingRow.status, notes: lcEditingRow.notes });
                 showToast(currentLang.value === 'it' ? "Stato aggiornato!" : "Status updated!");
                 isLcModalOpen.value = false;
                 loadLifecycleData();
@@ -633,12 +560,7 @@ const app = createApp({
             }
             
             try {
-                const res = await fetch('/api/janitor/delete-manual', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ document_ids: [docId], force: true })
-                });
-                const data = await res.json();
+                const data = await GDPHubAPI.janitor.deleteManual([docId], true);
                 if (data.status === 'success') {
                     if (!isFromModal) janitorLog.value += `[${logTs()}] ✓ Document ${docId} permanently removed.\n`;
                     showToast(currentLang.value === 'it' ? "Documento rimosso permanentemente!" : "Document permanently removed!");
@@ -661,7 +583,6 @@ const app = createApp({
 
         const janitorLog = ref('');
         const isJanitorLogCollapsed = ref(true);
-        const logTs = () => new Date().toLocaleTimeString();
 
         const deleteLcDirect = (row) => performDocumentDeletion(row.document_id, false);
 
@@ -671,8 +592,7 @@ const app = createApp({
             janitorLog.value += `[${logTs()}] Automated Janitor started...\n`;
             isJanitorLogCollapsed.value = false;
             try {
-                const res = await fetch('/api/janitor/run', { method: 'POST' });
-                const data = await res.json();
+                const data = await GDPHubAPI.janitor.run();
                 if(data.status === 'success') {
                     const s = data.summary;
                     janitorLog.value += `[${logTs()}] ✓ Janitor complete — Success: ${s.success}, Failed: ${s.failed}\n`;
@@ -790,8 +710,8 @@ const app = createApp({
         });
 
         return {
-            config, currentLang, t, currentView, viewTitle, setView, isSidebarOpen, handleBrowse, saveConfiguration, saveInputFolder, toasts,
-            processState, canStop, canPause, canResume, stopProcess, pauseProcess, resumeProcess, terminalOutput, terminalScrollRef, showPipelineProgress, pipelineProgressPercent, pipelineElapsedTime, pipelineRemainingTime, isTerminalCollapsed, scriptStatuses, models, classifyModel, identifyModel, classifyNoThink, identifyNoThink, executeScript,
+            config, currentLang, t, currentView, viewTitle, setView, isSidebarOpen, handleBrowse, saveConfiguration, saveInputFolder, applyGpuProfile, toasts,
+            processState, canStop, canPause, canResume, stopProcess, pauseProcess, resumeProcess, terminalOutput, terminalScrollRef, showPipelineProgress, isPipelineLoading, pipelineProgressPercent, pipelineElapsedTime, pipelineRemainingTime, isTerminalCollapsed, scriptStatuses, models, classifyModel, identifyModel, classifyNoThink, identifyNoThink, executeScript,
             ropaDataCache, sortedRopaData, ropaSortKey, ropaSortAsc, ropaSortBy, isRopaModalOpen, isBasesDropdownOpen, toggleBasesDropdown, ropaEditingRow, openRopaEditor, saveRopaEditor, ropaFileInput, uploadRopa, selectedFileName, onFileSelected, translateBases,
             docsData, sortedDocsData, docsSortKey, docsSortAsc, docsSortBy, idenData, sortedIdenData, idenSortKey, idenSortAsc, idenSortBy, isIdenModalOpen, idenEditingRow, openIdenEditor, saveIdenEditor, ropaOptions, pendingCount, loadPendingCount,
             lcData, activeLcData, deletedLcData, sortedActiveLcData, activeLcSortKey, activeLcSortAsc, activeLcSortBy, sortedDeletedLcData, deletedLcSortKey, deletedLcSortAsc, deletedLcSortBy, isLcModalOpen, lcEditingRow, openLcEditor, saveLcEditor, deleteLcNow, deleteLcDirect, formatDate, runningJanitor, runJanitor, janitorLog, isJanitorLogCollapsed, exportDeletedPdf, lawfulBasesOptions

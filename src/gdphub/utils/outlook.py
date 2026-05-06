@@ -96,7 +96,7 @@ def get_outlook_service() -> GraphServiceClient:
     This function handles token caching, refreshing, and the initial
     interactive browser OAuth2 flow using a unified outlook.json file.
     """
-    auth_file = SCRIPT_DIR / "auth" / "outlook.json"
+    auth_file = SCRIPT_DIR.parent.parent.parent / "src" / "auth" / "outlook.json"
     
     logging.info("Initializing Microsoft Graph client...")
     

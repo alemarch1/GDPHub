@@ -3,10 +3,10 @@
 # serialized JSON strings to preserve structure (dicts, lists, etc.).
 
 import json
-from typing import Any, Optional
-from sqlmodel import Session, select
-from database import engine
-from models import Configuration
+from typing import Any
+from sqlmodel import Session
+from gdphub.core.database import engine
+from gdphub.core.models import Configuration
 
 class ConfigManager:
     """

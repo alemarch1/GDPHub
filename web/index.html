@@ -248,20 +248,38 @@
                                             :title="currentLang === 'it' ? 'Aggiorna Modelli' : 'Refresh Models'">🔄</button>
                                     </div>
                                 </div>
+                                <div class="form-group full-width">
+                                    <label for="gpu-profile">{{ t('cfg_gpu_profile') }}</label>
+                                    <select id="gpu-profile" v-model="config.gpu_profile"
+                                        @change="applyGpuProfile(config.gpu_profile)">
+                                        <option value="8gb">8 GB VRAM (RTX 3060 8GB / 4060)</option>
+                                        <option value="12gb">12 GB VRAM (RTX 3060 12GB) — Default</option>
+                                        <option value="24gb">24 GB VRAM (RTX 3090 / 4090)</option>
+                                        <option value="custom">Custom</option>
+                                    </select>
+                                </div>
                                 <div class="form-row-grid">
                                     <div class="form-group">
                                         <label for="cls-num-predict">{{ t('cfg_num_predict') }}</label>
                                         <input type="number" id="cls-num-predict"
-                                            v-model="config.cls.options.num_predict">
+                                            v-model="config.cls.options.num_predict"
+                                            :disabled="config.gpu_profile !== 'custom'">
                                     </div>
                                     <div class="form-group">
                                         <label for="cls-temperature">{{ t('cfg_temperature') }}</label>
                                         <input type="number" id="cls-temperature"
-                                            v-model="config.cls.options.temperature" step="0.05">
+                                            v-model="config.cls.options.temperature" step="0.05"
+                                            :disabled="config.gpu_profile !== 'custom'">
                                     </div>
                                     <div class="form-group">
                                         <label for="cls-num-ctx">{{ t('cfg_num_ctx') }}</label>
-                                        <input type="number" id="cls-num-ctx" v-model="config.cls.options.num_ctx">
+                                        <input type="number" id="cls-num-ctx" v-model="config.cls.options.num_ctx"
+                                            :disabled="config.gpu_profile !== 'custom'">
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="cls-num-batch">{{ t('cfg_num_batch') }}</label>
+                                        <input type="number" id="cls-num-batch" v-model="config.cls.options.num_batch"
+                                            :disabled="config.gpu_profile !== 'custom'">
                                     </div>
                                 </div>
                             </div>
@@ -317,10 +335,10 @@
 
                             <button v-show="config.active_source === 'gmail' || config.active_source === 'outlook'"
                                 class="btn secondary exec-btn"
-                                :class="{ 'btn-success': scriptStatuses['0_extract_mail.py'] === 'success' }"
+                                :class="{ 'btn-success': scriptStatuses['extract_mail'] === 'success' }"
                                 :disabled="processState === 'running'"
-                                @click="executeScript('0_extract_mail.py', false)">
-                                <span v-if="scriptStatuses['0_extract_mail.py'] === 'success'">✓ {{ currentLang === 'it' ? 'Completato' : 'Done' }}</span>
+                                @click="executeScript('extract_mail', false)">
+                                <span v-if="scriptStatuses['extract_mail'] === 'success'">✓ {{ currentLang === 'it' ? 'Completato' : 'Done' }}</span>
                                 <span v-else>{{ config.active_source === 'outlook' ? t('btn_fetch_outlook') : t('btn_fetch_mail') }}</span>
                             </button>
                         </div>
@@ -331,10 +349,10 @@
                             <h3>{{ t('pipe_title_1') }}</h3>
                             <p>{{ t('pipe_desc_text') }}</p>
                             <button class="btn secondary exec-btn"
-                                :class="{ 'btn-success': scriptStatuses['1_extract_text.py'] === 'success' }"
+                                :class="{ 'btn-success': scriptStatuses['extract_text'] === 'success' }"
                                 :disabled="processState === 'running'"
-                                @click="executeScript('1_extract_text.py', false)">
-                                <span v-if="scriptStatuses['1_extract_text.py'] === 'success'">✓ {{ currentLang === 'it' ? 'Completato' : 'Done' }}</span>
+                                @click="executeScript('extract_text', false)">
+                                <span v-if="scriptStatuses['extract_text'] === 'success'">✓ {{ currentLang === 'it' ? 'Completato' : 'Done' }}</span>
                                 <span v-else>{{ t('btn_start_ocr') }}</span>
                             </button>
                         </div>
@@ -355,10 +373,10 @@
                                 </div>
                             </div>
                             <button class="btn primary exec-btn"
-                                :class="{ 'btn-success': scriptStatuses['2_classify_text.py'] === 'success' }"
+                                :class="{ 'btn-success': scriptStatuses['classify_text'] === 'success' }"
                                 :disabled="processState === 'running'"
-                                @click="executeScript('2_classify_text.py', true)">
-                                <span v-if="scriptStatuses['2_classify_text.py'] === 'success'">✓ {{ currentLang === 'it' ? 'Completato' : 'Done' }}</span>
+                                @click="executeScript('classify_text', true)">
+                                <span v-if="scriptStatuses['classify_text'] === 'success'">✓ {{ currentLang === 'it' ? 'Completato' : 'Done' }}</span>
                                 <span v-else>{{ t('btn_launch_intel') }}</span>
                             </button>
                         </div>
@@ -379,10 +397,10 @@
                                 </div>
                             </div>
                             <button class="btn primary exec-btn"
-                                :class="{ 'btn-success': scriptStatuses['4_identify_ROPA.py'] === 'success' }"
+                                :class="{ 'btn-success': scriptStatuses['identify_ropa'] === 'success' }"
                                 :disabled="processState === 'running'"
-                                @click="executeScript('4_identify_ROPA.py', true)">
-                                <span v-if="scriptStatuses['4_identify_ROPA.py'] === 'success'">✓ {{ currentLang === 'it' ? 'Completato' : 'Done' }}</span>
+                                @click="executeScript('identify_ropa', true)">
+                                <span v-if="scriptStatuses['identify_ropa'] === 'success'">✓ {{ currentLang === 'it' ? 'Completato' : 'Done' }}</span>
                                 <span v-else>{{ t('btn_map_data') }}</span>
                             </button>
                         </div>
@@ -404,13 +422,18 @@
                         <div class="main-progress-wrapper" v-show="showPipelineProgress">
                             <div class="progress-header">
                                 <div class="time-stats">
-                                    <span>Elapsed: {{ pipelineElapsedTime }}</span>
-                                    <span style="margin-left: 16px;">Remaining: {{ pipelineRemainingTime }}</span>
+                                    <template v-if="!isPipelineLoading && pipelineProgressPercent > 0">
+                                        <span>Elapsed: {{ pipelineElapsedTime }}</span>
+                                        <span style="margin-left: 16px;">Remaining: {{ pipelineRemainingTime }}</span>
+                                    </template>
+                                    <template v-else>
+                                        <span class="loading-text">⏳ {{ currentLang === 'it' ? 'Inizializzazione Modelli & Engine...' : 'Loading Models & Engine...' }}</span>
+                                    </template>
                                 </div>
-                                <span>{{ pipelineProgressPercent }}%</span>
+                                <span v-if="!isPipelineLoading">{{ pipelineProgressPercent }}%</span>
                             </div>
                             <div class="main-progress-track">
-                                <div class="main-progress-fill" :style="{ width: pipelineProgressPercent + '%' }"></div>
+                                <div class="main-progress-fill" :style="{ width: pipelineProgressPercent + '%' }" :class="{ 'progress-loading-pulse': isPipelineLoading }"></div>
                             </div>
                         </div>
                     </div>
@@ -754,7 +777,9 @@
                     </div>
 
                     <div class="card glass">
-                        <h3>{{ t('dash_ml_title') }}</h3>
+                        <div class="card-header-flex">
+                            <h3>{{ t('dash_ml_title') }}</h3>
+                        </div>
                         <div class="table-scroll-container restrict-h">
                             <table class="apple-table compact">
                                 <thead>
@@ -891,9 +916,8 @@
                 :class="{'active-view': currentView === 'lifecycle-view', 'hidden-view': currentView !== 'lifecycle-view'}">
                 <div class="content-container">
                     <div class="card glass mb-large">
-                        <h3>{{ t('lc_title') }}</h3>
-                        <p>{{ t('lc_desc') }}</p>
-                        <div class="header-actions" style="margin-bottom: 1.5rem;">
+                        <div class="card-header-flex">
+                            <h3>{{ t('lc_title') }}</h3>
                             <button class="btn primary" @click="runJanitor" :disabled="runningJanitor">
                                 {{ runningJanitor ? '⏳ Running...' : '🚀 Run Automated Janitor' }}
                             </button>
@@ -1183,6 +1207,10 @@
         </main>
     </div>
 
+    <!-- API helper + composables load before app.js so window.GDPHubAPI and
+         window.GDPHub.* are available during setup(). -->
+    <script src="api.js?v=2013"></script>
+    <script src="composables.js?v=2013"></script>
     <script src="app.js?v=2013"></script>
 </body>
 

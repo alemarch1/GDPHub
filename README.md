@@ -2,6 +2,8 @@
 
 An automated Python pipeline that extracts, anonymizes, classifies, and maps enterprise documents and emails to your GDPR Record of Processing Activities (ROPA) — using local LLMs and SQLite.
 
+![GDPHub Main Interface](docs/main.png)
+
 ![GDPR Document Erasure Audit Report](docs/audit_report_screenshot.png)
 
 ---
@@ -178,6 +180,8 @@ This behavior is enforced directly at the database level via specialized trigger
 # 🛡️ GDPHub Privacy Hub
 
 Una pipeline Python automatizzata che estrae, anonimizza, classifica e mappa documenti ed email aziendali sul Registro dei Trattamenti (ROPA) ai fini GDPR — tramite LLM locali e SQLite.
+
+![Interfaccia Principale GDPHub](docs/main.png)
 
 ![Report Audit di Cancellazione GDPR](docs/audit_report_screenshot.png)
 

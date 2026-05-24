@@ -47,7 +47,7 @@ const app = createApp({
             log_folder: '',
             log_level: 'INFO',
             mail: { client_id: '', client_secret: '', query: '', max_emails: 50, import_override_days: 0, delete_after_processing: false, import_override_ignore_processed: false },
-            ext: { tesseract_path: '', max_workers: 12 },
+            ext: { tesseract_path: '', max_workers: 4 },
             gpu_profile: '12gb',
             cls: { ollama_url: 'http://localhost:11434', ollama_model_default: '', title_max_length: 500, text_max_length: 1500, timeout_seconds: 30, api_request_timeout: 25, options: { temperature: 0.2, num_ctx: 2048, num_batch: 256, top_p: 0.9, top_k: 40, num_predict: 64 } },
             ropa: { ropa_folder: '' },
@@ -85,7 +85,7 @@ const app = createApp({
 
                 const ext = data['extract_text.py'] || {};
                 config.ext.tesseract_path = ext.tesseract_path || '';
-                config.ext.max_workers = ext.max_workers || 12;
+                config.ext.max_workers = ext.max_workers || 4;
 
                 const cls = data['classify_text.py'] || {};
                 config.cls.ollama_url = cls.ollama_url || 'http://localhost:11434';
@@ -336,6 +336,34 @@ const app = createApp({
             }
         };
 
+        // Administration
+        const isAdminCollapsed = ref(true);
+        const adminSelectedOption = ref("1");
+        const adminCollection = ref("classifications");
+        const adminEntryId = ref("");
+        const isAdminRunning = ref(false);
+        const adminOutput = ref("");
+
+        const runAdminAction = async () => {
+            isAdminRunning.value = true;
+            adminOutput.value = "Starting administration action...\n";
+            try {
+                const res = await GDPHubAPI.admin.clean({
+                    option: adminSelectedOption.value,
+                    collection: adminSelectedOption.value === "6" ? adminCollection.value : null,
+                    entry_id: adminSelectedOption.value === "6" ? adminEntryId.value : null
+                });
+                adminOutput.value += `Status: ${res.status}\n`;
+                if (res.output) {
+                    adminOutput.value += `${res.output}\n`;
+                }
+            } catch (e) {
+                adminOutput.value += `[Error]: ${e.message}\n`;
+            } finally {
+                isAdminRunning.value = false;
+            }
+        };
+
         // ROPA Editor
         const ropaDataCache = ref([]);
         const { sortKey: ropaSortKey, sortAsc: ropaSortAsc, sortBy: ropaSortBy, sortedData: sortedRopaData } = useSortableTable(ropaDataCache);
@@ -344,6 +372,12 @@ const app = createApp({
                 const d = await GDPHubAPI.ropa.list();
                 ropaDataCache.value = d.data || [];
             } catch(e) {}
+        };
+
+        const ropaExportFormat = ref('xlsx');
+        const exportRopa = () => {
+            const format = ropaExportFormat.value;
+            window.location.href = `/api/ropa/export?format=${format}`;
         };
 
         const isRopaModalOpen = ref(false);
@@ -467,13 +501,39 @@ const app = createApp({
         const docsData = ref([]);
         const idenData = ref([]);
         const pendingCount = ref(0);
+        const docsModelFilter = ref('');
+        const idenModelFilter = ref('');
+        const classificationModels = ref([]);
+        const mappingModels = ref([]);
         const { sortKey: docsSortKey, sortAsc: docsSortAsc, sortBy: docsSortBy, sortedData: sortedDocsData } = useSortableTable(docsData);
         const { sortKey: idenSortKey, sortAsc: idenSortAsc, sortBy: idenSortBy, sortedData: sortedIdenData } = useSortableTable(idenData);
+
+        const loadModelsUsed = async () => {
+            try {
+                const res = await GDPHubAPI.models.used();
+                classificationModels.value = res.classification_models || [];
+                mappingModels.value = res.mapping_models || [];
+            } catch(e) {}
+        };
+
         const loadDashboardData = async () => {
             try {
-                docsData.value = (await GDPHubAPI.documents.list()).data || [];
-                idenData.value = (await GDPHubAPI.identified.list()).data || [];
+                docsData.value = (await GDPHubAPI.documents.list(docsModelFilter.value || undefined)).data || [];
+                idenData.value = (await GDPHubAPI.identified.list(idenModelFilter.value || undefined)).data || [];
                 loadPendingCount();
+                loadModelsUsed();
+            } catch(e) {}
+        };
+
+        const onDocsModelChange = async () => {
+            try {
+                docsData.value = (await GDPHubAPI.documents.list(docsModelFilter.value || undefined)).data || [];
+            } catch(e) {}
+        };
+
+        const onIdenModelChange = async () => {
+            try {
+                idenData.value = (await GDPHubAPI.identified.list(idenModelFilter.value || undefined)).data || [];
             } catch(e) {}
         };
 
@@ -482,6 +542,33 @@ const app = createApp({
                 const data = await GDPHubAPI.stats.pending();
                 pendingCount.value = data.count || 0;
             } catch(e) { pendingCount.value = 0; }
+        };
+
+        // Document Classification Editor
+        const isDocsModalOpen = ref(false);
+        const docsEditingRow = reactive({ file_id: '', file_name: '', classification_generic: '', description_short: '' });
+
+        const openDocsEditor = (row) => {
+            docsEditingRow.file_id = row.file_id || '';
+            docsEditingRow.file_name = row.file_name || '';
+            docsEditingRow.classification_generic = row.classification_generic || '';
+            docsEditingRow.description_short = row.description_short || '';
+            isDocsModalOpen.value = true;
+        };
+
+        const saveDocsEditor = async () => {
+            if (!docsEditingRow.file_id) return;
+            try {
+                const payload = {
+                    classification_generic: docsEditingRow.classification_generic,
+                    description_short: docsEditingRow.description_short,
+                };
+                if (docsModelFilter.value) payload.model_used = docsModelFilter.value;
+                await GDPHubAPI.documents.updateClassification(docsEditingRow.file_id, payload);
+                showToast(currentLang.value === 'it' ? 'Classificazione aggiornata!' : 'Classification updated!');
+                isDocsModalOpen.value = false;
+                loadDashboardData();
+            } catch(e) { showToast('Error saving classification'); }
         };
 
         // Identified Mapping Editor
@@ -712,9 +799,10 @@ const app = createApp({
         return {
             config, currentLang, t, currentView, viewTitle, setView, isSidebarOpen, handleBrowse, saveConfiguration, saveInputFolder, applyGpuProfile, toasts,
             processState, canStop, canPause, canResume, stopProcess, pauseProcess, resumeProcess, terminalOutput, terminalScrollRef, showPipelineProgress, isPipelineLoading, pipelineProgressPercent, pipelineElapsedTime, pipelineRemainingTime, isTerminalCollapsed, scriptStatuses, models, classifyModel, identifyModel, classifyNoThink, identifyNoThink, executeScript,
-            ropaDataCache, sortedRopaData, ropaSortKey, ropaSortAsc, ropaSortBy, isRopaModalOpen, isBasesDropdownOpen, toggleBasesDropdown, ropaEditingRow, openRopaEditor, saveRopaEditor, ropaFileInput, uploadRopa, selectedFileName, onFileSelected, translateBases,
-            docsData, sortedDocsData, docsSortKey, docsSortAsc, docsSortBy, idenData, sortedIdenData, idenSortKey, idenSortAsc, idenSortBy, isIdenModalOpen, idenEditingRow, openIdenEditor, saveIdenEditor, ropaOptions, pendingCount, loadPendingCount,
-            lcData, activeLcData, deletedLcData, sortedActiveLcData, activeLcSortKey, activeLcSortAsc, activeLcSortBy, sortedDeletedLcData, deletedLcSortKey, deletedLcSortAsc, deletedLcSortBy, isLcModalOpen, lcEditingRow, openLcEditor, saveLcEditor, deleteLcNow, deleteLcDirect, formatDate, runningJanitor, runJanitor, janitorLog, isJanitorLogCollapsed, exportDeletedPdf, lawfulBasesOptions
+            ropaDataCache, sortedRopaData, ropaSortKey, ropaSortAsc, ropaSortBy, isRopaModalOpen, isBasesDropdownOpen, toggleBasesDropdown, ropaEditingRow, openRopaEditor, saveRopaEditor, ropaFileInput, uploadRopa, selectedFileName, onFileSelected, translateBases, ropaExportFormat, exportRopa,
+            docsData, sortedDocsData, docsSortKey, docsSortAsc, docsSortBy, isDocsModalOpen, docsEditingRow, openDocsEditor, saveDocsEditor, docsModelFilter, classificationModels, onDocsModelChange, idenData, sortedIdenData, idenSortKey, idenSortAsc, idenSortBy, isIdenModalOpen, idenEditingRow, openIdenEditor, saveIdenEditor, idenModelFilter, mappingModels, onIdenModelChange, ropaOptions, pendingCount, loadPendingCount,
+            lcData, activeLcData, deletedLcData, sortedActiveLcData, activeLcSortKey, activeLcSortAsc, activeLcSortBy, sortedDeletedLcData, deletedLcSortKey, deletedLcSortAsc, deletedLcSortBy, isLcModalOpen, lcEditingRow, openLcEditor, saveLcEditor, deleteLcNow, deleteLcDirect, formatDate, runningJanitor, runJanitor, janitorLog, isJanitorLogCollapsed, exportDeletedPdf, lawfulBasesOptions,
+            isAdminCollapsed, adminSelectedOption, adminCollection, adminEntryId, isAdminRunning, adminOutput, runAdminAction
         };
     }
 });

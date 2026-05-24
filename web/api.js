@@ -84,12 +84,19 @@
             upload: (formData) => fetch('/api/upload_ropa', { method: 'POST', body: formData }),
         },
 
+        // ----- models -----
+        models: {
+            used: () => getJSON('/api/models/used'),
+        },
+
         // ----- documents / identified mappings -----
         documents: {
-            list: () => getJSON('/api/documents'),
+            list: (model) => getJSON('/api/documents' + (model ? '?model=' + encodeURIComponent(model) : '')),
+            updateClassification: (fileId, payload) =>
+                postJSON('/api/documents/' + encodeURIComponent(fileId) + '/classification', payload),
         },
         identified: {
-            list:   ()              => getJSON('/api/identified'),
+            list:   (model)         => getJSON('/api/identified' + (model ? '?model=' + encodeURIComponent(model) : '')),
             update: (id, payload)   => postJSON('/api/identified/' + encodeURIComponent(id), payload),
         },
         stats: {
@@ -110,6 +117,9 @@
                     document_ids: documentIds,
                     force: !!force,
                 }),
+        },
+        admin: {
+            clean: (payload) => postJSON('/api/admin/clean', payload),
         },
     };
 

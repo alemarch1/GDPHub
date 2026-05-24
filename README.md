@@ -38,6 +38,7 @@ Once started, open **http://localhost:8000** in your browser.
 - **Text Extraction & OCR** — Built-in parsers for PDF, DOCX, DOC, ODT, RTF, JSON, HTML, XLS, CSV, TXT with Tesseract OCR fallback.
 - **Privacy-First Anonymization** — [Microsoft Presidio](https://microsoft.github.io/presidio/) with bilingual NLP (Italian + English via spaCy). Detects names, emails, phones, IBANs, fiscal codes, IPs, and more — entirely offline.
 - **LLM Classification** — Local [Ollama](https://ollama.com/) models produce structured JSON summaries and document classifications.
+- **Human-In-The-Loop RAG** — Manual corrections to classifications or ROPA mappings are stored in a local [ChromaDB](https://www.trychroma.com/) vector database. Future pipeline runs retrieve the most similar past corrections and inject them as dynamic few-shot examples, so the LLM learns from your feedback over time.
 - **ROPA Mapping & Retention** — Imports your corporate ROPA (Excel/CSV) and uses AI to match documents against processing activities with automatic retention tracking.
 - **Lifecycle Management** — Tracks document lifespans mapped to ROPA retention windows.
 - **Erasure Audit Report** — One-click PDF export proving GDPR Art. 17 compliance (creation → scheduled deletion → actual erasure).
@@ -61,6 +62,24 @@ Six sequential scripts orchestrated via the WebUI or CLI:
 
 ---
 
+## 🔄 Human-In-The-Loop (HITL) Learning
+
+GDPHub improves its AI accuracy over time by learning from your manual corrections:
+
+1. **Correct via the UI** — Edit a document's classification or reassign its ROPA mapping through the web interface.
+2. **Feedback is vectorized** — The correction is embedded using `nomic-embed-text` (via Ollama) and stored in a local ChromaDB database alongside the main SQLite DB.
+3. **Future runs use your feedback** — When the classification or ROPA-matching pipeline processes a new document, it retrieves the top 2 most similar past corrections and injects them as few-shot examples into the LLM prompt.
+
+**Requirements:** The `nomic-embed-text` embedding model must be available in Ollama:
+
+```bash
+ollama pull nomic-embed-text
+```
+
+ChromaDB data is persisted automatically in `data/output/chromadb/`. No additional configuration is needed.
+
+---
+
 ## ⚙️ Manual Setup (Alternative)
 
 If you prefer manual installation over the 1-click scripts:
@@ -75,6 +94,7 @@ Then install [Ollama](https://ollama.com/) and pull a model:
 
 ```bash
 ollama pull qwen3.5:9b
+ollama pull nomic-embed-text   # required for HITL feedback loop
 ```
 
 **Run the web app:**
@@ -135,6 +155,16 @@ Ollama model selection, extraction parameters, and email filters are all configu
 
 ---
 
+## 📅 Multi-ROPA Deletion Retention Handling
+
+When a document/email matches multiple ROPA processing activities with different retention periods, the system automatically:
+1. Maintains only a **single lifecycle record** per document ID in the `document_lifecycle` table.
+2. Sets and dynamically updates the `scheduled_deletion_date` of that record to match the **maximum (latest) retention period** among all associated activities.
+
+This behavior is enforced directly at the database level via specialized triggers (`trg_calculate_lifecycle_insert` and `trg_calculate_lifecycle_update`), ensuring compliance with GDPR Art. 17 guidelines (never deleting a document before its longest retention purpose has expired).
+
+---
+
 ## 📄 License
 
 [Apache License 2.0](LICENSE)
@@ -185,6 +215,7 @@ Una volta avviato, apri **http://localhost:8000** nel browser.
 - **Estrazione Testo & OCR** — Parser integrati per PDF, DOCX, DOC, ODT, RTF, JSON, HTML, XLS, CSV, TXT con fallback Tesseract OCR.
 - **Anonimizzazione Privacy-First** — [Microsoft Presidio](https://microsoft.github.io/presidio/) con NLP bilingue (Italiano + Inglese via spaCy). Rileva nomi, email, telefoni, IBAN, codici fiscali, IP e altro — interamente offline.
 - **Classificazione LLM** — Modelli [Ollama](https://ollama.com/) locali producono riassunti JSON strutturati e classificazioni documentali.
+- **Human-In-The-Loop RAG** — Le correzioni manuali a classificazioni o mappature ROPA vengono salvate in un database vettoriale [ChromaDB](https://www.trychroma.com/) locale. Le esecuzioni future della pipeline recuperano le correzioni passate più simili e le iniettano come esempi few-shot dinamici, così l'LLM impara dal tuo feedback nel tempo.
 - **Mappatura ROPA & Conservazione** — Importa il ROPA aziendale (Excel/CSV) e usa l'IA per associare documenti alle attività di trattamento con tracciamento automatico della conservazione.
 - **Gestione Ciclo di Vita** — Traccia la durata dei documenti mappata alle finestre di conservazione ROPA.
 - **Report Audit di Cancellazione** — Esportazione PDF con un click a prova di conformità GDPR Art. 17 (creazione → cancellazione pianificata → cancellazione effettiva).
@@ -208,6 +239,24 @@ Sei script sequenziali orchestrabili dalla WebUI o da CLI:
 
 ---
 
+## 🔄 Apprendimento Human-In-The-Loop (HITL)
+
+GDPHub migliora la precisione dell'IA nel tempo imparando dalle tue correzioni manuali:
+
+1. **Correggi dalla UI** — Modifica la classificazione di un documento o riassegna la sua mappatura ROPA dall'interfaccia web.
+2. **Il feedback viene vettorializzato** — La correzione viene trasformata in embedding tramite `nomic-embed-text` (via Ollama) e salvata in un database ChromaDB locale accanto al database SQLite principale.
+3. **Le esecuzioni future usano il tuo feedback** — Quando la pipeline di classificazione o mappatura ROPA elabora un nuovo documento, recupera le 2 correzioni passate più simili e le inietta come esempi few-shot nel prompt dell'LLM.
+
+**Requisiti:** Il modello di embedding `nomic-embed-text` deve essere disponibile in Ollama:
+
+```bash
+ollama pull nomic-embed-text
+```
+
+I dati ChromaDB vengono salvati automaticamente in `data/output/chromadb/`. Non è necessaria alcuna configurazione aggiuntiva.
+
+---
+
 ## ⚙️ Setup Manuale (Alternativo)
 
 Se preferisci l'installazione manuale agli script 1-click:
@@ -222,6 +271,7 @@ Poi installa [Ollama](https://ollama.com/) e scarica un modello:
 
 ```bash
 ollama pull qwen3.5:9b
+ollama pull nomic-embed-text   # necessario per il ciclo di feedback HITL
 ```
 
 **Avvia la web app:**
@@ -279,6 +329,16 @@ Tutte le impostazioni sono gestite dalla pagina Configurazione della WebUI (su S
 | `log_folder` | Directory dei log (rotazione automatica a 500 KB) |
 
 Selezione modello Ollama, parametri di estrazione e filtri email sono tutti configurabili dalla WebUI — nessuna modifica manuale necessaria.
+
+---
+
+## 📅 Gestione Conservazione per Associazioni ROPA Multiple
+
+Quando un documento o un'email corrisponde a più attività di trattamento ROPA con differenti periodi di conservazione, il sistema automaticamente:
+1. Mantiene **un singolo record di ciclo di vita** per ciascun ID documento nella tabella `document_lifecycle`.
+2. Imposta e aggiorna dinamicamente la data `scheduled_deletion_date` di quel record in base al **massimo (più lungo) periodo di conservazione** tra tutte le attività associate.
+
+Questo comportamento è garantito a livello di database tramite trigger dedicati (`trg_calculate_lifecycle_insert` e `trg_calculate_lifecycle_update`), garantendo la conformità con l'Art. 17 GDPR (non eliminando un documento prima che il suo scopo di conservazione più lungo sia scaduto).
 
 ---
 

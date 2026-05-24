@@ -23,9 +23,12 @@ scratch/
 # Unused/deprecated directories
 src/web/
 src/serve/
+.claude/
+.gemini/
 
 # Authentication / OAuth credentials & tokens (DO NOT UPLOAD)
 src/auth/
+token.json
 
 # Data directories (do not upload documents)
 data/

@@ -5,7 +5,7 @@
 import json
 import os
 from pathlib import Path
-from sqlalchemy import event
+from sqlalchemy import event, text
 from sqlmodel import create_engine, Session, SQLModel
 import gdphub.core.models as models  # noqa: F401  side-effect import — registers SQLModel tables on metadata
 
@@ -82,6 +82,176 @@ def set_sqlite_pragma(dbapi_connection, connection_record):
 def create_db_and_tables():
     """Creates all registered SQLModel tables if they don't already exist."""
     SQLModel.metadata.create_all(engine)
+    
+    with get_session() as session:
+        # 1. Drop old single-action trigger
+        session.execute(text("DROP TRIGGER IF EXISTS trg_calculate_lifecycle"))
+        
+        # 2. Create insert trigger (when no lifecycle record exists yet)
+        session.execute(text("""
+            CREATE TRIGGER IF NOT EXISTS trg_calculate_lifecycle_insert
+            AFTER INSERT ON "document_ropa_mapping"
+            FOR EACH ROW
+            WHEN NOT EXISTS (SELECT 1 FROM document_lifecycle WHERE document_id = NEW.document_id)
+            BEGIN
+                INSERT INTO document_lifecycle (document_id, document_type, creation_date, scheduled_deletion_date, status)
+                SELECT 
+                    NEW.document_id,
+                    (SELECT type FROM document WHERE id = NEW.document_id),
+                    (SELECT creation_date FROM document WHERE id = NEW.document_id),
+                    COALESCE(datetime((SELECT creation_date FROM document WHERE id = NEW.document_id), r.retention_periods), datetime('now', '+100 years')),
+                    'PENDING'
+                FROM "ropa_record" r
+                WHERE r.id = NEW.ropa_id;
+            END
+        """))
+        
+        # 3. Create update trigger (when lifecycle record already exists, keeping the maximum retention date)
+        session.execute(text("""
+            CREATE TRIGGER IF NOT EXISTS trg_calculate_lifecycle_update
+            AFTER INSERT ON "document_ropa_mapping"
+            FOR EACH ROW
+            WHEN EXISTS (SELECT 1 FROM document_lifecycle WHERE document_id = NEW.document_id)
+            BEGIN
+                UPDATE document_lifecycle
+                SET scheduled_deletion_date = CASE 
+                    WHEN scheduled_deletion_date < COALESCE(datetime(creation_date, (SELECT retention_periods FROM ropa_record WHERE id = NEW.ropa_id)), datetime('now', '+100 years'))
+                    THEN COALESCE(datetime(creation_date, (SELECT retention_periods FROM ropa_record WHERE id = NEW.ropa_id)), datetime('now', '+100 years'))
+                    ELSE scheduled_deletion_date
+                END
+                WHERE document_id = NEW.document_id;
+            END
+        """))
+        
+        # 4. Recalculate lifecycle on ROPA mapping UPDATE (e.g. manual corrections)
+        session.execute(text("DROP TRIGGER IF EXISTS trg_recalc_lifecycle_on_update"))
+        session.execute(text("""
+            CREATE TRIGGER IF NOT EXISTS trg_recalc_lifecycle_on_update
+            AFTER UPDATE OF ropa_id ON "document_ropa_mapping"
+            FOR EACH ROW
+            WHEN EXISTS (SELECT 1 FROM document_lifecycle WHERE document_id = NEW.document_id)
+            BEGIN
+                UPDATE document_lifecycle
+                SET scheduled_deletion_date = COALESCE(
+                    (SELECT MAX(COALESCE(
+                        datetime(dl.creation_date, r.retention_periods),
+                        datetime('now', '+100 years')
+                    ))
+                    FROM document_ropa_mapping m
+                    JOIN ropa_record r ON r.id = m.ropa_id
+                    JOIN document_lifecycle dl ON dl.document_id = m.document_id
+                    WHERE m.document_id = NEW.document_id AND m.ropa_id IS NOT NULL),
+                    datetime('now', '+100 years')
+                )
+                WHERE document_id = NEW.document_id;
+            END
+        """))
+
+        # 5. Recalculate lifecycle on ROPA mapping DELETE (e.g. --force re-run)
+        #    When all mappings are deleted, we keep the existing date unchanged
+        #    rather than inflating to +100 years (the pipeline will re-insert
+        #    new mappings and the INSERT trigger will recalculate properly).
+        session.execute(text("DROP TRIGGER IF EXISTS trg_recalc_lifecycle_on_delete"))
+        session.execute(text("""
+            CREATE TRIGGER IF NOT EXISTS trg_recalc_lifecycle_on_delete
+            AFTER DELETE ON "document_ropa_mapping"
+            FOR EACH ROW
+            WHEN EXISTS (SELECT 1 FROM document_lifecycle WHERE document_id = OLD.document_id)
+              AND EXISTS (SELECT 1 FROM document_ropa_mapping
+                          WHERE document_id = OLD.document_id AND ropa_id IS NOT NULL
+                            AND id != OLD.id)
+            BEGIN
+                UPDATE document_lifecycle
+                SET scheduled_deletion_date = (
+                    SELECT MAX(COALESCE(
+                        datetime(dl.creation_date, r.retention_periods),
+                        datetime('now', '+100 years')
+                    ))
+                    FROM document_ropa_mapping m
+                    JOIN ropa_record r ON r.id = m.ropa_id
+                    JOIN document_lifecycle dl ON dl.document_id = m.document_id
+                    WHERE m.document_id = OLD.document_id AND m.ropa_id IS NOT NULL
+                      AND m.id != OLD.id
+                )
+                WHERE document_id = OLD.document_id;
+            END
+        """))
+
+        # 6. Consolidate any existing duplicate lifecycle records
+        duplicates = session.execute(text(
+            "SELECT document_id FROM document_lifecycle GROUP BY document_id HAVING count(*) > 1"
+        )).all()
+        
+        if duplicates:
+            from gdphub.core.models import DocumentLifecycle
+            from sqlmodel import select
+            
+            for row in duplicates:
+                doc_id = row[0]
+                records = session.exec(
+                    select(DocumentLifecycle)
+                    .where(DocumentLifecycle.document_id == doc_id)
+                    .order_by(DocumentLifecycle.scheduled_deletion_date.desc())
+                ).all()
+                
+                # Keep the first record (latest date), delete the rest
+                for delete_rec in records[1:]:
+                    session.delete(delete_rec)
+                    
+        session.commit()
+
+def recalculate_lifecycle(session, document_id: str):
+    """Recalculates the scheduled_deletion_date for a document based on all its ROPA mappings.
+
+    Uses the MAX retention period across all models' mappings (all-models-combined).
+    This is a Python safety net alongside the SQLite triggers.
+    """
+    from gdphub.core.models import DocumentLifecycle, DocumentRopaMapping, RopaRecord, Document
+    from sqlmodel import select
+    from datetime import datetime as dt
+
+    lifecycle = session.exec(
+        select(DocumentLifecycle).where(DocumentLifecycle.document_id == document_id)
+    ).first()
+    if not lifecycle:
+        return
+
+    mappings = session.exec(
+        select(DocumentRopaMapping).where(
+            DocumentRopaMapping.document_id == document_id,
+            DocumentRopaMapping.ropa_id.isnot(None),  # type: ignore[union-attr]
+        )
+    ).all()
+
+    if not mappings:
+        # No valid mappings — set far-future fallback
+        lifecycle.scheduled_deletion_date = dt(2126, 1, 1)
+        session.add(lifecycle)
+        return
+
+    max_date = None
+    for m in mappings:
+        ropa = session.get(RopaRecord, m.ropa_id)
+        if ropa and lifecycle.creation_date:
+            try:
+                # Use SQLite datetime arithmetic via raw query
+                result = session.execute(
+                    text("SELECT datetime(:creation, :retention)"),
+                    {"creation": str(lifecycle.creation_date), "retention": ropa.retention_periods},
+                ).scalar()
+                if result:
+                    candidate = dt.fromisoformat(result)
+                    if max_date is None or candidate > max_date:
+                        max_date = candidate
+            except Exception:
+                pass
+
+    if max_date:
+        lifecycle.scheduled_deletion_date = max_date
+    else:
+        lifecycle.scheduled_deletion_date = dt(2126, 1, 1)
+    session.add(lifecycle)
+
 
 def get_session():
     """Returns a new SQLModel database session."""

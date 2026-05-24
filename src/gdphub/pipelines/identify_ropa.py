@@ -16,7 +16,7 @@ from gdphub.utils.model import get_model_profile  # noqa: F401  retained for bac
 
 # --- CONFIGURATION AND PATHS ---
 SCRIPT_DIR = Path(__file__).resolve().parent
-PROJECT_ROOT = SCRIPT_DIR.parent
+PROJECT_ROOT = SCRIPT_DIR.parent.parent.parent
 
 # --- ARGUMENT PARSING HELPER ---
 def parse_arguments():
@@ -26,6 +26,8 @@ def parse_arguments():
     parser.add_argument("--no-think", action="store_true", help="Disable model thinking/chain-of-thought")
     parser.add_argument("--gpu-profile", type=str, choices=["8gb", "12gb", "24gb"],
                         help="GPU VRAM preset (overrides ollama_options)", default=None)
+    parser.add_argument("--force", action="store_true",
+                        help="Delete existing mappings for the active model before re-processing")
     parser.add_argument("--seed", type=int, default=None,
                         help="Optional global RNG seed for fully reproducible runs. "
                              "When omitted, per-document shuffles are seeded by file_id.")
@@ -131,10 +133,37 @@ ollama_client = _chat_service.client
 AUTO_DISABLE_THINKING = _chat_service.disable_thinking
 
 # --- PROMPT CONSTRUCTION LOGIC ---
+def _build_rag_examples(document: dict) -> str:
+    """Fetches similar past ROPA corrections from RAG and formats them as few-shot examples."""
+    try:
+        from gdphub.services.rag_service import query_ropa_mapping_examples
+        examples = query_ropa_mapping_examples(
+            classification=document.get('classification_generic', ''),
+            description=document.get('description_short', ''),
+            text_snippet=document.get('extracted_text_masked', ''),
+            n_results=2,
+        )
+        if not examples:
+            return ""
+        parts = []
+        for i, ex in enumerate(examples, 1):
+            parts.append(
+                f"Example {i} (from past human correction):\n"
+                f"{ex['document_text']}\n"
+                f"Correct ROPA: {ex['corrected_ropa_id']} - {ex['corrected_ropa_activity']}\n"
+            )
+        return "\n".join(parts) + "\n"
+    except Exception as e:
+        logging.warning(f"RAG lookup failed (non-blocking): {e}")
+        return ""
+
+
 def build_prompt(document: dict, processing_activities: list, use_example: bool = True) -> str:
     """Constructs the LLM prompt to match a document against ROPA processing activities."""
+    rag_examples = _build_rag_examples(document)
+
     example = ""
-    if use_example:
+    if use_example and not rag_examples:
         example = (
             'Example:\n'
             'Document:\n'
@@ -160,6 +189,7 @@ def build_prompt(document: dict, processing_activities: list, use_example: bool 
     prompt = (
         "You are a GDPR document matching AI. Your ONLY task is to match a document to the most relevant processing activities. "
         "Never generate conversational text.\n\n"
+        f"{rag_examples}"
         f"{example}"
         f"Document to analyze:\n"
         f"Title: {title}\n"
@@ -274,7 +304,27 @@ def process_identification():
             if not docs:
                 print("No documents found in the database to identify. Please run text extraction first.")
                 return
-                
+
+            # --force: delete existing mappings for the active model before re-processing
+            if CLI_ARGS.force:
+                from gdphub.core.database import recalculate_lifecycle
+                existing = [m for m in session.exec(select(DocumentRopaMapping)).all()
+                            if m.model_used == ACTIVE_OLLAMA_MODEL]
+                if existing:
+                    affected_doc_ids = {m.document_id for m in existing}
+                    for m in existing:
+                        session.delete(m)
+                    session.commit()
+                    # Recalculate lifecycle for affected documents so stale
+                    # retention dates don't poison subsequent INSERT triggers
+                    for doc_id in affected_doc_ids:
+                        recalculate_lifecycle(session, doc_id)
+                    session.commit()
+                    print(f"Force mode: deleted {len(existing)} existing mappings for {ACTIVE_OLLAMA_MODEL}")
+                    logging.info(f"Force mode: deleted {len(existing)} existing mappings for {ACTIVE_OLLAMA_MODEL}")
+                    # Refresh documents after deletion
+                    docs = session.exec(select(Document)).all()
+
             docs_to_process = []
             for doc in docs:
                 has_mapped = any(m.model_used == ACTIVE_OLLAMA_MODEL for m in doc.ropa_mappings)
@@ -282,7 +332,11 @@ def process_identification():
                     class_obj = next((c for c in reversed(doc.classifications) if c.model_used == ACTIVE_OLLAMA_MODEL), None)
                     if not class_obj and doc.classifications:
                         class_obj = doc.classifications[-1]
-                        
+                        logging.warning(
+                            f"Document {doc.id}: no classification for {ACTIVE_OLLAMA_MODEL}, "
+                            f"using {class_obj.model_used} classification as fallback"
+                        )
+
                     if class_obj:
                         doc_dict = {
                             "file_id": doc.id,

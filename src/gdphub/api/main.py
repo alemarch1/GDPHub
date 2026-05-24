@@ -3,6 +3,7 @@
 # document lifecycle operations, ROPA management, and the Janitor service.
 # Serves the static frontend from the /web directory.
 
+import logging
 import os
 import sys
 import json
@@ -17,11 +18,13 @@ from fastapi.middleware.cors import CORSMiddleware
 import ollama
 import psutil
 
-from gdphub.core.database import get_session, create_db_and_tables
+from gdphub.core.database import get_session, create_db_and_tables, recalculate_lifecycle
 from gdphub.core.models import Document, DocumentClassification, DocumentLifecycle, RopaRecord, DocumentRopaMapping, ProcessedEmail
-from sqlmodel import select, delete
+from sqlmodel import select, delete, col
+from sqlalchemy import func
 from gdphub.core.config_manager import get_config, set_config, Configuration
 from gdphub.services.deletion import execute_deletion_workflow
+from gdphub.services import rag_service
 from gdphub.core.settings import seed_dict, gpu_profile_migration_pairs
 
 # --- APPLICATION INITIALIZATION ---
@@ -479,10 +482,143 @@ async def save_ropa(request: Request):
     except Exception as e:
         raise HTTPException(status_code=500, detail="An internal server error occurred")
 
+@app.get("/api/ropa/export")
+async def export_ropa(format: str = "xlsx"):
+    """Exports all ROPA records from the database in CSV or XLSX format."""
+    if format not in ["csv", "xlsx"]:
+        raise HTTPException(status_code=400, detail="Invalid format. Supported formats: csv, xlsx")
+        
+    try:
+        import io
+        import pandas as pd
+        from fastapi.responses import Response
+        
+        with get_session() as session:
+            records = session.exec(select(RopaRecord)).all()
+            
+        data = []
+        for r in records:
+            data.append({
+                "id": r.id,
+                "Processing Activity": r.activity,
+                "Lawful Bases": r.lawful_bases,
+                "Data Subject Categories": r.subject_categories,
+                "Personal Data Categories": r.personal_data_categories,
+                "Recipients Categories": r.recipients_categories,
+                "International Transfers": r.international_transfers,
+                "Retention Periods": r.retention_periods
+            })
+            
+        df = pd.DataFrame(data)
+        
+        if format == "csv":
+            stream = io.StringIO()
+            df.to_csv(stream, index=False, encoding='utf-8')
+            response_content = stream.getvalue().encode('utf-8')
+            media_type = "text/csv"
+            filename = "ropa_export.csv"
+        else:
+            stream = io.BytesIO()
+            with pd.ExcelWriter(stream, engine='openpyxl') as writer:
+                df.to_excel(writer, index=False, sheet_name='ROPA')
+            response_content = stream.getvalue()
+            media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            filename = "ropa_export.xlsx"
+            
+        return Response(
+            content=response_content,
+            media_type=media_type,
+            headers={
+                "Content-Disposition": f"attachment; filename={filename}",
+                "Access-Control-Expose-Headers": "Content-Disposition"
+            }
+        )
+    except Exception as e:
+        logging.exception("Failed to export ROPA file")
+        raise HTTPException(status_code=500, detail=f"Export failed: {str(e)}")
+
+from pydantic import BaseModel
+class AdminCleanRequest(BaseModel):
+    option: str
+    collection: Optional[str] = None
+    entry_id: Optional[str] = None
+
+@app.post("/api/admin/clean")
+async def run_admin_clean(req: AdminCleanRequest):
+    """Runs gdphub.utils.clean with the appropriate command line flags and returns stdout/stderr."""
+    # Map option to arguments
+    args = []
+    if req.option == "1":
+        args = ["--sqlite"]
+    elif req.option == "2":
+        args = ["--vector-clear", "classifications"]
+    elif req.option == "3":
+        args = ["--vector-clear", "mappings"]
+    elif req.option == "4":
+        args = ["--vector-clear", "all"]
+    elif req.option == "5":
+        args = ["--vector-list"]
+    elif req.option == "6":
+        if not req.collection or not req.entry_id:
+            raise HTTPException(status_code=400, detail="Collection and Entry ID are required for option 6")
+        args = ["--vector-delete-id", req.entry_id, "--collection", req.collection]
+    elif req.option == "7":
+        args = ["--all"]
+    else:
+        raise HTTPException(status_code=400, detail=f"Invalid option: {req.option}")
+
+    try:
+        # Run the script using subprocess
+        cmd = [sys.executable, "-m", "gdphub.utils.clean"] + args
+        logging.info(f"Running admin action command: {' '.join(cmd)}")
+        process = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        stdout, stderr = await process.communicate()
+        
+        output = stdout.decode("utf-8", errors="replace")
+        error_output = stderr.decode("utf-8", errors="replace")
+        
+        combined_output = output
+        if error_output:
+            combined_output += f"\n--- ERROR ---\n{error_output}"
+            
+        return {
+            "status": "success" if process.returncode == 0 else "error",
+            "returncode": process.returncode,
+            "output": combined_output
+        }
+    except Exception as e:
+        logging.exception("Failed to run clean.py script")
+        raise HTTPException(status_code=500, detail=f"Failed to execute clean.py: {str(e)}")
+
+
+
 # --- DOCUMENT AND IDENTIFICATION ENDPOINTS ---
+
+@app.get("/api/models/used")
+async def get_models_used():
+    """Returns distinct model_used values from classifications and mappings."""
+    try:
+        with get_session() as session:
+            cls_models = session.exec(
+                select(DocumentClassification.model_used).distinct()
+            ).all()
+            map_models = session.exec(
+                select(DocumentRopaMapping.model_used).distinct()
+            ).all()
+            return {
+                "classification_models": sorted(cls_models),
+                "mapping_models": sorted(map_models),
+            }
+    except Exception:
+        return {"classification_models": [], "mapping_models": []}
+
 @app.get("/api/documents")
-async def get_docs():
-    """Returns all extracted documents with their latest classification."""
+async def get_docs(model: Optional[str] = None):
+    """Returns all extracted documents with their classification for the selected model."""
     try:
         with get_session() as session:
             docs = session.exec(select(Document)).all()
@@ -499,18 +635,67 @@ async def get_docs():
                     "names_or_surnames_masked": d.names_or_surnames_masked
                 }
                 if d.classifications:
-                    last_c = d.classifications[-1]
-                    item.update({
-                        "classification_generic": last_c.classification_generic,
-                        "description_short": last_c.description_short,
-                        "ollama_model_used": last_c.model_used,
-                        "ollama_time_generic_s": last_c.time_generic_s,
-                        "ollama_time_short_s": last_c.time_short_s
-                    })
+                    if model:
+                        cls = next((c for c in d.classifications if c.model_used == model), None)
+                    else:
+                        cls = d.classifications[-1]
+                    if cls:
+                        item.update({
+                            "classification_generic": cls.classification_generic,
+                            "description_short": cls.description_short,
+                            "ollama_model_used": cls.model_used,
+                            "ollama_time_generic_s": cls.time_generic_s,
+                            "ollama_time_short_s": cls.time_short_s
+                        })
                 data.append(item)
             return {"data": data}
     except Exception as e:
          return {"data": []}
+
+@app.post("/api/documents/{file_id}/classification")
+async def update_document_classification(file_id: str, request: Request):
+    """Manually corrects a document's classification and stores the feedback in RAG."""
+    try:
+        data = await request.json()
+        new_type = data.get("classification_generic", "").strip()
+        new_desc = data.get("description_short", "").strip()
+        target_model = data.get("model_used")
+        if not new_type and not new_desc:
+            raise HTTPException(status_code=400, detail="At least one field required")
+        with get_session() as session:
+            doc = session.get(Document, file_id)
+            if not doc:
+                raise HTTPException(status_code=404, detail="Document not found")
+            if not doc.classifications:
+                raise HTTPException(status_code=404, detail="Document has no classifications yet")
+            target_c = None
+            if target_model:
+                target_c = next((c for c in doc.classifications if c.model_used == target_model), None)
+                if not target_c:
+                    raise HTTPException(status_code=404, detail=f"No classification found for model {target_model}")
+            else:
+                target_c = doc.classifications[-1]
+            if new_type:
+                target_c.classification_generic = new_type
+            if new_desc:
+                target_c.description_short = new_desc
+            session.add(target_c)
+            session.commit()
+            try:
+                rag_service.upsert_classification(
+                    document_id=file_id,
+                    file_name=doc.file_name or "",
+                    text_snippet=doc.extracted_text_masked or "",
+                    corrected_type=new_type or (target_c.classification_generic if target_c else ""),
+                    corrected_description=new_desc or (target_c.description_short if target_c else ""),
+                )
+            except Exception as rag_err:
+                logging.warning(f"RAG upsert failed (non-blocking): {rag_err}")
+        return {"status": "success"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="An internal server error occurred")
 
 @app.get("/api/stats/pending")
 async def get_pending_stats():
@@ -565,11 +750,29 @@ async def get_pending_stats():
         return {"count": 0}
 
 @app.get("/api/identified")
-async def get_identified():
-    """Returns all document-to-ROPA mappings with associated metadata."""
+async def get_identified(model: Optional[str] = None):
+    """Returns document-to-ROPA mappings, optionally filtered by model.
+
+    When no model is specified, defaults to the most recently used model.
+    Documents not covered by that model fall back to any other model's mapping.
+    """
     try:
         with get_session() as session:
-            mappings = session.exec(select(DocumentRopaMapping)).all()
+            all_mappings = session.exec(select(DocumentRopaMapping)).all()
+
+            if model:
+                mappings = [m for m in all_mappings if m.model_used == model]
+            else:
+                if not all_mappings:
+                    return {"data": []}
+                latest_model = max(all_mappings, key=lambda m: m.processing_date).model_used
+                latest_doc_ids = {m.document_id for m in all_mappings if m.model_used == latest_model}
+                all_doc_ids = {m.document_id for m in all_mappings}
+                uncovered = all_doc_ids - latest_doc_ids
+                mappings = [m for m in all_mappings if m.model_used == latest_model]
+                if uncovered:
+                    mappings += [m for m in all_mappings if m.document_id in uncovered and m.model_used != latest_model]
+
             records = []
             for m in mappings:
                 doc = m.document
@@ -584,10 +787,13 @@ async def get_identified():
                 last_cls = ""
                 last_desc = ""
                 if doc.classifications:
-                    c = doc.classifications[-1]
-                    last_cls = c.classification_generic
-                    last_desc = c.description_short
-                
+                    # Prefer the classification from the same model as the mapping
+                    cls = next((c for c in doc.classifications if c.model_used == m.model_used), None)
+                    if not cls:
+                        cls = doc.classifications[-1]
+                    last_cls = cls.classification_generic
+                    last_desc = cls.description_short
+
                 records.append({
                     "mapping_id": m.id,
                     "ROPA_ID": m.ropa_id,
@@ -596,7 +802,8 @@ async def get_identified():
                     "type": doc.type,
                     "parent_id": doc.parent_id,
                     "classification": last_cls,
-                    "description": last_desc
+                    "description": last_desc,
+                    "model_used": m.model_used
                 })
             return {"data": records}
     except Exception as e:
@@ -615,6 +822,39 @@ async def update_identified_mapping(mapping_id: int, request: Request):
             mapping.ropa_id = new_ropa_id if new_ropa_id else None
             session.add(mapping)
             session.commit()
+
+            # Recalculate lifecycle retention (safety net alongside SQLite trigger)
+            try:
+                recalculate_lifecycle(session, mapping.document_id)
+                session.commit()
+            except Exception as lc_err:
+                logging.warning(f"Lifecycle recalculation failed (non-blocking): {lc_err}")
+
+            if new_ropa_id:
+                try:
+                    doc = mapping.document
+                    ropa = session.get(RopaRecord, new_ropa_id)
+                    cls_text = ""
+                    desc_text = ""
+                    if doc.classifications:
+                        # Prefer the classification from the same model as the mapping
+                        cls = next((c for c in doc.classifications if c.model_used == mapping.model_used), None)
+                        if not cls:
+                            cls = doc.classifications[-1]
+                        cls_text = cls.classification_generic or ""
+                        desc_text = cls.description_short or ""
+                    rag_service.upsert_ropa_mapping(
+                        mapping_id=mapping_id,
+                        document_id=doc.id,
+                        classification=cls_text,
+                        description=desc_text,
+                        text_snippet=doc.extracted_text_masked or "",
+                        corrected_ropa_id=new_ropa_id,
+                        corrected_ropa_activity=ropa.activity if ropa else "",
+                    )
+                except Exception as rag_err:
+                    logging.warning(f"RAG upsert failed (non-blocking): {rag_err}")
+
         return {"status": "success"}
     except HTTPException:
         raise
@@ -645,16 +885,32 @@ async def get_lifecycle():
             )
             rows = session.exec(stmt).all()
 
-            # Multiple classifications per document collapse to the latest one
-            # (highest id). The prior raw JOIN returned all combinations and
-            # relied on the LEFT-JOIN order — this preserves the *intent* and
-            # is deterministic.
+            # For each document, find the latest model used in its ROPA
+            # mappings so we can prefer the matching classification.
+            doc_latest_model: dict[str, str] = {}
+            _doc_latest_date: dict[str, "datetime"] = {}
+            all_mappings = session.exec(select(DocumentRopaMapping)).all()
+            for mp in all_mappings:
+                prev_date = _doc_latest_date.get(mp.document_id)
+                if prev_date is None or mp.processing_date > prev_date:
+                    doc_latest_model[mp.document_id] = mp.model_used
+                    _doc_latest_date[mp.document_id] = mp.processing_date
+
+            # Multiple classifications per document collapse to the one
+            # matching the latest ROPA-mapping model (or highest id as
+            # fallback). This keeps the lifecycle view consistent with the
+            # ROPA mapping that determined the retention date.
             best: dict[int, dict] = {}
             for lc, doc, cls in rows:
                 lc_id = lc.id if lc.id is not None else id(lc)
                 existing = best.get(lc_id)
-                cls_score = cls.id if (cls is not None and cls.id is not None) else -1
-                if existing is None or cls_score > existing["_cls_score"]:
+                cls_id = cls.id if (cls is not None and cls.id is not None) else -1
+                # Prefer classification whose model matches the latest ROPA mapping model
+                preferred_model = doc_latest_model.get(lc.document_id)
+                model_match = 1 if (cls is not None and preferred_model and cls.model_used == preferred_model) else 0
+                score = (model_match, cls_id)
+                prev_score = existing["_cls_score"] if existing else (-1, -1)
+                if existing is None or score > prev_score:
                     best[lc_id] = {
                         "lifecycle_id": lc.id,
                         "document_id": lc.document_id,
@@ -665,7 +921,7 @@ async def get_lifecycle():
                         "status": lc.status,
                         "notes": lc.notes,
                         "classification": cls.classification_generic if cls else None,
-                        "_cls_score": cls_score,
+                        "_cls_score": score,
                     }
             data = []
             for entry in best.values():

@@ -3,3 +3,8 @@ HR & Payroll Management,"b, c",Employees,"Standard Personal Data (Article 4), Sp
 Newsletter Campaign,a,"Customers, Potential customers",Standard Personal Data (Article 4),Processors,United States,+730 days
 Corporate CCTV,f,"Employees, Customers, Suppliers",Standard Personal Data (Article 4),Internal department that processes the concerned data,EU,+7 days
 Recruitment & Hiring,"a, b",Applicants,"Standard Personal Data (Article 4), Special Categories / Sensitive Data (Article 9)",Internal department that processes the concerned data,EU,+183 days
+IT Security & Logs Management,f,"Employees, Customers, System Administrators",Standard Personal Data (Article 4),"Internal IT Security department, Processors",EU,+180 days
+Procurement & Supplier Management,"b, c","Suppliers, External Consultants, Partners",Standard Personal Data (Article 4),"Accounting department, Tax authorities, Banks",EU,+3650 days
+Customer Relationship Management (CRM) & Sales,"b, f","Customers, Potential customers",Standard Personal Data (Article 4),"Sales department, CRM platform processors",United States,+3650 days
+Software Analytics & Telemetry,a,Users,Standard Personal Data (Article 4),"Product Engineering team, Cloud providers",EU,+365 days
+Whistleblowing Channels,c,"Employees, Suppliers, Whistleblowers","Standard Personal Data (Article 4), Special Categories / Sensitive Data (Article 9)","Supervisory Body, Judicial authorities",EU,+1825 days

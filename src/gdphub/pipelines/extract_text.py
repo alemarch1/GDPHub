@@ -41,7 +41,7 @@ import xml.etree.ElementTree as ET
 
 # --- GLOBAL CONFIGURATION AND PATHS ---
 SCRIPT_DIR = Path(__file__).resolve().parent
-PROJECT_ROOT = SCRIPT_DIR.parent
+PROJECT_ROOT = SCRIPT_DIR.parent.parent.parent
 
 extract_config = get_config('extract_text.py', {})
 raw_folder = get_config('input_folder', '')
@@ -51,7 +51,7 @@ OUTPUT_FOLDER = PROJECT_ROOT / get_config('database_folder', './data/output')
 LOG_FOLDER = PROJECT_ROOT / get_config('log_folder', './logs')
 
 TESSERACT_PATH = extract_config.get('tesseract_path', '')
-MAX_WORKERS = extract_config.get('max_workers', os.cpu_count() or 4)
+MAX_WORKERS = extract_config.get('max_workers', min(4, os.cpu_count() or 4))
 
 if TESSERACT_PATH:
     pytesseract.pytesseract.tesseract_cmd = TESSERACT_PATH

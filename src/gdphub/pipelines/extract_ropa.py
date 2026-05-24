@@ -15,7 +15,7 @@ from gdphub.core.config_manager import get_config
 
 # --- CONFIGURATION AND PATHS ---
 SCRIPT_DIR = Path(__file__).resolve().parent
-PROJECT_ROOT = SCRIPT_DIR.parent
+PROJECT_ROOT = SCRIPT_DIR.parent.parent.parent
 
 def parse_arguments():
     """Parses command line arguments for ROPA extraction."""

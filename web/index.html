@@ -287,6 +287,16 @@
                                         <input type="number" id="cls-num-batch" v-model="config.cls.options.num_batch"
                                             :disabled="config.gpu_profile !== 'custom'">
                                     </div>
+                                    <div class="form-group">
+                                        <label for="cls-top-p">{{ t('cfg_top_p') }}</label>
+                                        <input type="number" id="cls-top-p" v-model="config.cls.options.top_p" step="0.05"
+                                            :disabled="config.gpu_profile !== 'custom'">
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="cls-top-k">{{ t('cfg_top_k') }}</label>
+                                        <input type="number" id="cls-top-k" v-model="config.cls.options.top_k"
+                                            :disabled="config.gpu_profile !== 'custom'">
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -305,6 +315,68 @@
                                             @click="handleBrowse('config.ropa.ropa_folder', $event)"
                                             title="Browse Folder">📁</button>
                                     </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Administration Section -->
+                    <div class="card glass config-card admin-card" style="margin-top: 24px;">
+                        <div class="card-header" @click="isAdminCollapsed = !isAdminCollapsed" style="cursor: pointer; justify-content: space-between; display: flex; width: 100%;">
+                            <div style="display: flex; align-items: center; gap: 12px;">
+                                <span class="header-icon">🛡️</span>
+                                <h3 style="color: #ff3b30; margin: 0; font-weight: 600;">Administration</h3>
+                            </div>
+                            <span class="terminal-toggle-icon" style="user-select: none;">{{ isAdminCollapsed ? '▶' : '▼' }}</span>
+                        </div>
+                        
+                        <div v-show="!isAdminCollapsed" style="margin-top: 20px;">
+                            <div class="grid-form">
+                                <div class="form-group full-width">
+                                    <label for="admin-action">Action to Execute</label>
+                                    <select id="admin-action" v-model="adminSelectedOption" style="width: 100%;">
+                                        <option value="1">[1] Clean SQLite (erase documents, classifications, mappings, lifecycle)</option>
+                                        <option value="2">[2] Clean Vector DB — classifications</option>
+                                        <option value="3">[3] Clean Vector DB — ROPA mappings</option>
+                                        <option value="4">[4] Clean Vector DB — all collections</option>
+                                        <option value="5">[5] List Vector DB contents</option>
+                                        <option value="6">[6] Delete single Vector DB entry</option>
+                                        <option value="7">[7] Clean EVERYTHING (SQLite + Vector DB)</option>
+                                    </select>
+                                </div>
+
+                                <!-- Dynamic fields for Option 6 -->
+                                <div class="form-group" v-if="adminSelectedOption === '6'">
+                                    <label for="admin-collection">Collection</label>
+                                    <select id="admin-collection" v-model="adminCollection">
+                                        <option value="classifications">classifications</option>
+                                        <option value="mappings">mappings</option>
+                                    </select>
+                                </div>
+                                <div class="form-group" v-if="adminSelectedOption === '6'">
+                                    <label for="admin-entry-id">Entry ID</label>
+                                    <input type="text" id="admin-entry-id" v-model="adminEntryId" placeholder="Enter vector entry ID">
+                                </div>
+                            </div>
+
+                            <div style="margin-top: 20px; display: flex; justify-content: flex-end;">
+                                <button class="btn primary" @click="runAdminAction" :disabled="isAdminRunning" style="display: flex; gap: 8px; align-items: center;">
+                                    <span>{{ isAdminRunning ? '⏳ Running...' : '🚀 Run Action' }}</span>
+                                </button>
+                            </div>
+
+                            <!-- Output log console -->
+                            <div class="terminal-container" v-if="adminOutput" style="margin-top: 20px;">
+                                <div class="terminal-header">
+                                    <div class="terminal-dots">
+                                        <span class="dot red"></span>
+                                        <span class="dot yellow"></span>
+                                        <span class="dot green"></span>
+                                    </div>
+                                    <span class="terminal-title">Execution Console</span>
+                                </div>
+                                <div class="terminal-body" style="height: 250px;">
+                                    <pre style="margin: 0; white-space: pre-wrap; font-family: inherit; color: #34c759;">{{ adminOutput }}</pre>
                                 </div>
                             </div>
                         </div>
@@ -491,9 +563,20 @@
                     </div>
 
                     <div class="card glass editor-zone">
-                        <div class="card-header">
-                            <span class="header-icon">🗺️</span>
-                            <h3>{{ t('ropa_editor_title') }}</h3>
+                        <div class="card-header-flex">
+                            <div class="card-header no-margin">
+                                <span class="header-icon">🗺️</span>
+                                <h3>{{ t('ropa_editor_title') }}</h3>
+                            </div>
+                            <div class="row-controls">
+                                <select v-model="ropaExportFormat" class="small-select">
+                                    <option value="xlsx">.xlsx</option>
+                                    <option value="csv">.csv</option>
+                                </select>
+                                <button class="btn primary" @click="exportRopa">
+                                    📤 {{ t('btn_export') }}
+                                </button>
+                            </div>
                         </div>
                         <div class="table-scroll-container">
                             <table class="apple-table">
@@ -691,6 +774,10 @@
                     <div class="card glass mb-large">
                         <div class="card-header-flex">
                             <h3>{{ t('dash_snap_title') }}</h3>
+                            <select v-if="classificationModels.length > 1" v-model="docsModelFilter" @change="onDocsModelChange" class="small-select">
+                                <option value="">{{ t('filter_model_latest') }}</option>
+                                <option v-for="m in classificationModels" :key="m" :value="m">{{ m }}</option>
+                            </select>
                             <div class="counter-badge" v-if="pendingCount > 0" :title="t('lbl_pending_docs_hint')">
                                 <span class="counter-icon">🕒</span>
                                 <strong>{{ pendingCount }}</strong> {{ t('lbl_pending_count') }}
@@ -766,6 +853,7 @@
                                                 </div>
                                             </div>
                                         </th>
+                                        <th>{{ t('th_actions') }}</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -776,15 +864,54 @@
                                         <td>{{ r.classification_generic || 'Pending' }}</td>
                                         <td>{{ r.description_short || '-' }}</td>
                                         <td>{{ r.names_or_surnames_masked ? (currentLang === 'it' ? '✅ Sì' : '✅ Yes') : (currentLang === 'it' ? '⬜ No' : '⬜ No') }}</td>
+                                        <td>
+                                            <div class="action-btn-group">
+                                                <button class="btn-icon btn-edit" @click="openDocsEditor(r)" :title="currentLang === 'it' ? 'Modifica' : 'Edit'">✏️</button>
+                                            </div>
+                                        </td>
                                     </tr>
                                 </tbody>
                             </table>
                         </div>
                     </div>
 
+            <!-- Modal for Document Classification Editing (Teleported to body) -->
+            <Teleport to="body">
+                <div class="modal" v-if="isDocsModalOpen">
+                    <div class="modal-content glass">
+                        <div class="card-header">
+                            <span class="header-icon">📝</span>
+                            <h3>{{ currentLang === 'it' ? 'Modifica Classificazione' : 'Edit Classification' }}</h3>
+                        </div>
+                        <div class="grid-form">
+                            <div class="form-group full-width">
+                                <label>{{ t('th_filename') }}</label>
+                                <input type="text" :value="docsEditingRow.file_name" disabled>
+                            </div>
+                            <div class="form-group full-width">
+                                <label>{{ t('th_classification') }}</label>
+                                <input type="text" v-model="docsEditingRow.classification_generic">
+                            </div>
+                            <div class="form-group full-width">
+                                <label>{{ t('th_description') }}</label>
+                                <input type="text" v-model="docsEditingRow.description_short">
+                            </div>
+                        </div>
+                        <div class="modal-actions">
+                            <button class="btn secondary" @click="isDocsModalOpen = false">{{ t('btn_cancel') }}</button>
+                            <button class="btn primary" @click="saveDocsEditor">{{ t('btn_save_context') }}</button>
+                        </div>
+                    </div>
+                </div>
+            </Teleport>
+
                     <div class="card glass">
                         <div class="card-header-flex">
                             <h3>{{ t('dash_ml_title') }}</h3>
+                            <select v-if="mappingModels.length > 1" v-model="idenModelFilter" @change="onIdenModelChange" class="small-select">
+                                <option value="">{{ t('filter_model_latest') }}</option>
+                                <option v-for="m in mappingModels" :key="m" :value="m">{{ m }}</option>
+                            </select>
                         </div>
                         <div class="table-scroll-container restrict-h">
                             <table class="apple-table compact">
@@ -1215,9 +1342,9 @@
 
     <!-- API helper + composables load before app.js so window.GDPHubAPI and
          window.GDPHub.* are available during setup(). -->
-    <script src="api.js?v=2013"></script>
-    <script src="composables.js?v=2013"></script>
-    <script src="app.js?v=2013"></script>
+    <script src="api.js?v=2014"></script>
+    <script src="composables.js?v=2014"></script>
+    <script src="app.js?v=2014"></script>
 </body>
 
 </html>

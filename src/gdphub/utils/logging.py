@@ -8,7 +8,7 @@ from pathlib import Path
 from gdphub.core.config_manager import get_config
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-PROJECT_ROOT = SCRIPT_DIR.parent
+PROJECT_ROOT = SCRIPT_DIR.parent.parent.parent
 
 def setup_logging(script_name):
     """

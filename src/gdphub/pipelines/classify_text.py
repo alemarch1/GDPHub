@@ -21,7 +21,7 @@ from gdphub.utils.model import get_model_profile  # noqa: F401  retained for bac
 
 # --- CONSTANTS AND PATHS DEFINITION ---
 SCRIPT_DIR = Path(__file__).resolve().parent
-PROJECT_ROOT = SCRIPT_DIR.parent
+PROJECT_ROOT = SCRIPT_DIR.parent.parent.parent
 
 # --- ARGUMENT PARSING ---
 # Parsed at module load so config-time blocks (e.g. GPU profile override below)
@@ -248,6 +248,27 @@ def classify_document_text(
     
     return (final_value if final_value else error_default, elapsed)
 
+# --- RAG FEW-SHOT HELPER FOR CLASSIFICATION ---
+def _build_classification_rag_examples(text_content: str) -> str:
+    """Fetches similar past classification corrections from RAG."""
+    try:
+        from gdphub.services.rag_service import query_classification_examples
+        examples = query_classification_examples(text_snippet=text_content, n_results=2)
+        if not examples:
+            return ""
+        parts = []
+        for i, ex in enumerate(examples, 1):
+            parts.append(
+                f"Example {i} (from past human correction):\n"
+                f"{ex['document_text']}\n"
+                f'Correct answer: {{"type": "{ex["corrected_type"]}", "description": "{ex["corrected_description"]}"}}\n'
+            )
+        return "\n".join(parts) + "\n"
+    except Exception as e:
+        logging.warning(f"RAG classification lookup failed (non-blocking): {e}")
+        return ""
+
+
 # --- COMBINED CLASSIFICATION (SINGLE OLLAMA CALL FOR BOTH FIELDS) ---
 def classify_document_combined(
     title: str,
@@ -265,8 +286,11 @@ def classify_document_combined(
     cleaned_title = clean_text(title)[:TITLE_MAX_LENGTH]
     cleaned_text = clean_text(text_content)[:TEXT_MAX_LENGTH]
 
+    rag_examples = _build_classification_rag_examples(text_content)
+
     prompt = (
         "Analyze this document. Respond ONLY with a valid JSON object — no explanation, no markdown.\n\n"
+        f"{rag_examples}"
         f"TITLE: {cleaned_title}\n"
         f"TEXT: {cleaned_text}\n\n"
         'Return exactly: {"type": "<1 to 3 words classifying the document>", "description": "<max 10 words describing it>"}'
